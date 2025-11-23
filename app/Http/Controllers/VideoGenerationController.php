@@ -8,6 +8,8 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use GuzzleHttp\Client;
+use GuzzleHttp\Psr7\MultipartStream;
 
 class VideoGenerationController extends Controller
 {
@@ -51,8 +53,13 @@ class VideoGenerationController extends Controller
             'product_name' => 'required',
             'product_description' => 'nullable',
             'product_image_url' => 'required|url',
-            'ugc_style' => 'required',
-            // ... other settings
+            'ugc_style' => 'required|in:authentic,professional,casual,energetic',
+            'video_duration' => 'nullable|integer|min:5|max:30',
+            'target_audience' => 'nullable|string',
+            'tone' => 'nullable|in:professional,enthusiastic,calm,playful,energetic',
+            'camera_movement' => 'nullable|in:static,handheld,smooth,dynamic',
+            'setting' => 'nullable|string',
+            'number_of_videos' => 'nullable|integer|min:1|max:5',
         ]);
 
         $jobId = 'ugc_' . Str::random(10);
@@ -66,14 +73,44 @@ class VideoGenerationController extends Controller
             'status' => 'pending',
         ]);
 
-        // Send to n8n
+        // Send to n8n as multipart/form-data (using Guzzle directly)
         $n8nWebhookUrl = config('services.n8n.webhook_url');
         
         if ($n8nWebhookUrl) {
              try {
-                Http::post($n8nWebhookUrl, array_merge($validated, ['job_id' => $jobId]));
+                $client = new Client();
+                
+                // Prepare multipart form data
+                // n8n's "Validate Input" checks for body.product_image_url
+                $response = $client->post($n8nWebhookUrl, [
+                    'multipart' => [
+                        ['name' => 'job_id', 'contents' => $jobId],
+                        ['name' => 'store_id', 'contents' => $validated['store_id']],
+                        ['name' => 'product_name', 'contents' => $validated['product_name']],
+                        ['name' => 'product_description', 'contents' => $validated['product_description'] ?? ''],
+                        ['name' => 'ugc_style', 'contents' => $validated['ugc_style']],
+                        ['name' => 'video_duration', 'contents' => (string)($validated['video_duration'] ?? 7)],
+                        ['name' => 'target_audience', 'contents' => $validated['target_audience'] ?? ''],
+                        ['name' => 'tone', 'contents' => $validated['tone'] ?? 'energetic'],
+                        ['name' => 'camera_movement', 'contents' => $validated['camera_movement'] ?? 'handheld'],
+                        ['name' => 'setting', 'contents' => $validated['setting'] ?? 'urban'],
+                        ['name' => 'number_of_videos', 'contents' => (string)($validated['number_of_videos'] ?? 1)],
+                        // Send as both 'data' AND 'product_image_url' to match n8n workflow
+                        ['name' => 'data', 'contents' => $validated['product_image_url']],
+                        ['name' => 'product_image_url', 'contents' => $validated['product_image_url']],
+                    ]
+                ]);
+                
+                Log::info("Sent to n8n successfully", [
+                    'job_id' => $jobId,
+                    'status_code' => $response->getStatusCode(),
+                    'image_url' => $validated['product_image_url']
+                ]);
              } catch (\Exception $e) {
-                 Log::error("Failed to send to n8n: " . $e->getMessage());
+                 Log::error("Failed to send to n8n: " . $e->getMessage(), [
+                    'job_id' => $jobId,
+                    'url' => $n8nWebhookUrl
+                 ]);
              }
         } else {
             Log::warning("N8N_WEBHOOK_URL not set. Job created but not sent.");
