@@ -34,7 +34,26 @@ class VideoWebhookController extends Controller
         if ($status === 'completed' && $videoUrl) {
             // Download the video immediately
             try {
-                $videoContent = Http::get($videoUrl)->body();
+                // Append API Key if it's a Google URL and we have a key
+                if (str_contains($videoUrl, 'googleapis.com') && config('services.google.api_key')) {
+                    $separator = str_contains($videoUrl, '?') ? '&' : '?';
+                    $videoUrl .= $separator . 'key=' . config('services.google.api_key');
+                }
+
+                $response = Http::get($videoUrl);
+
+                if ($response->failed()) {
+                    throw new \Exception("Failed to download video. Status: " . $response->status());
+                }
+
+                $contentType = $response->header('Content-Type');
+                if (strpos($contentType, 'application/json') !== false) {
+                    $error = $response->json();
+                    $errorMessage = $error['error']['message'] ?? 'Unknown API error';
+                    throw new \Exception("API Error: " . $errorMessage);
+                }
+
+                $videoContent = $response->body();
                 $filename = "videos/{$jobId}.mp4";
                 Storage::put($filename, $videoContent);
 
@@ -49,7 +68,7 @@ class VideoWebhookController extends Controller
 
             } catch (\Exception $e) {
                 Log::error("Failed to download video: " . $e->getMessage());
-                $job->update(['status' => 'failed', 'error_message' => 'Download failed']);
+                $job->update(['status' => 'failed', 'error_message' => $e->getMessage()]);
             }
         } elseif ($status === 'failed') {
             $job->update([
