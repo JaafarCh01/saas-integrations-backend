@@ -12,3 +12,4 @@ Dockerfile
 README.md
 phpunit.xml
 tests
+bootstrap/cache/*.php

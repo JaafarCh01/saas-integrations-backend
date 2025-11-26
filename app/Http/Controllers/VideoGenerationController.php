@@ -48,75 +48,87 @@ class VideoGenerationController extends Controller
     // 2. Generate Video
     public function generate(Request $request)
     {
-        $validated = $request->validate([
-            'store_id' => 'required',
-            'product_name' => 'required',
-            'product_description' => 'nullable',
-            'product_image_url' => 'required|url',
-            'ugc_style' => 'required|in:authentic,professional,casual,energetic',
-            'video_duration' => 'nullable|integer|min:5|max:30',
-            'target_audience' => 'nullable|string',
-            'tone' => 'nullable|in:professional,enthusiastic,calm,playful,energetic',
-            'camera_movement' => 'nullable|in:static,handheld,smooth,dynamic',
-            'setting' => 'nullable|string',
-            'number_of_videos' => 'nullable|integer|min:1|max:5',
-        ]);
+        try {
+            $validated = $request->validate([
+                'store_id' => 'required',
+                'product_name' => 'required',
+                'product_description' => 'nullable',
+                'product_image_url' => 'required|url',
+                'ugc_style' => 'required|in:authentic,professional,casual,energetic',
+                'video_duration' => 'nullable|integer|min:5|max:30',
+                'target_audience' => 'nullable|string',
+                'tone' => 'nullable|in:professional,enthusiastic,calm,playful,energetic',
+                'camera_movement' => 'nullable|in:static,handheld,smooth,dynamic',
+                'setting' => 'nullable|string',
+                'number_of_videos' => 'nullable|integer|min:1|max:5',
+            ]);
 
-        $jobId = 'ugc_' . Str::random(10);
+            Log::info('Debug DB Config', [
+                'default_connection' => config('database.default'),
+                'env_db_connection' => env('DB_CONNECTION'),
+                'db_host' => env('DB_HOST'),
+            ]);
 
-        $job = VideoJob::create([
-            'job_id' => $jobId,
-            'store_id' => $validated['store_id'],
-            'product_name' => $validated['product_name'],
-            'product_description' => $validated['product_description'] ?? '',
-            'product_image_url' => $validated['product_image_url'],
-            'status' => 'pending',
-        ]);
+            $jobId = 'ugc_' . Str::random(10);
 
-        // Send to n8n as multipart/form-data (using Guzzle directly)
-        $n8nWebhookUrl = config('services.n8n.webhook_url');
+            $job = VideoJob::create([
+                'job_id' => $jobId,
+                'store_id' => $validated['store_id'],
+                'product_name' => $validated['product_name'],
+                'product_description' => $validated['product_description'] ?? '',
+                'product_image_url' => $validated['product_image_url'],
+                'status' => 'pending',
+            ]);
 
-        if ($n8nWebhookUrl) {
-            try {
-                $client = new Client();
+            // Send to n8n as multipart/form-data (using Guzzle directly)
+            $n8nWebhookUrl = config('services.n8n.webhook_url');
 
-                // Prepare multipart form data
-                // n8n's "Validate Input" checks for body.product_image_url
-                $response = $client->post($n8nWebhookUrl, [
-                    'multipart' => [
-                        ['name' => 'job_id', 'contents' => $jobId],
-                        ['name' => 'store_id', 'contents' => $validated['store_id']],
-                        ['name' => 'product_name', 'contents' => $validated['product_name']],
-                        ['name' => 'product_description', 'contents' => $validated['product_description'] ?? ''],
-                        ['name' => 'ugc_style', 'contents' => $validated['ugc_style']],
-                        ['name' => 'video_duration', 'contents' => (string) ($validated['video_duration'] ?? 7)],
-                        ['name' => 'target_audience', 'contents' => $validated['target_audience'] ?? ''],
-                        ['name' => 'tone', 'contents' => $validated['tone'] ?? 'energetic'],
-                        ['name' => 'camera_movement', 'contents' => $validated['camera_movement'] ?? 'handheld'],
-                        ['name' => 'setting', 'contents' => $validated['setting'] ?? 'urban'],
-                        ['name' => 'number_of_videos', 'contents' => (string) ($validated['number_of_videos'] ?? 1)],
-                        // Send as both 'data' AND 'product_image_url' to match n8n workflow
-                        ['name' => 'data', 'contents' => $validated['product_image_url']],
-                        ['name' => 'product_image_url', 'contents' => $validated['product_image_url']],
-                    ]
-                ]);
+            if ($n8nWebhookUrl) {
+                try {
+                    $client = new Client();
 
-                Log::info("Sent to n8n successfully", [
-                    'job_id' => $jobId,
-                    'status_code' => $response->getStatusCode(),
-                    'image_url' => $validated['product_image_url']
-                ]);
-            } catch (\Exception $e) {
-                Log::error("Failed to send to n8n: " . $e->getMessage(), [
-                    'job_id' => $jobId,
-                    'url' => $n8nWebhookUrl
-                ]);
+                    // Prepare multipart form data
+                    // n8n's "Validate Input" checks for body.product_image_url
+                    $response = $client->post($n8nWebhookUrl, [
+                        'multipart' => [
+                            ['name' => 'job_id', 'contents' => $jobId],
+                            ['name' => 'store_id', 'contents' => $validated['store_id']],
+                            ['name' => 'product_name', 'contents' => $validated['product_name']],
+                            ['name' => 'product_description', 'contents' => $validated['product_description'] ?? ''],
+                            ['name' => 'ugc_style', 'contents' => $validated['ugc_style']],
+                            ['name' => 'video_duration', 'contents' => (string) ($validated['video_duration'] ?? 7)],
+                            ['name' => 'target_audience', 'contents' => $validated['target_audience'] ?? ''],
+                            ['name' => 'tone', 'contents' => $validated['tone'] ?? 'energetic'],
+                            ['name' => 'camera_movement', 'contents' => $validated['camera_movement'] ?? 'handheld'],
+                            ['name' => 'setting', 'contents' => $validated['setting'] ?? 'urban'],
+                            ['name' => 'number_of_videos', 'contents' => (string) ($validated['number_of_videos'] ?? 1)],
+                            // Send as both 'data' AND 'product_image_url' to match n8n workflow
+                            ['name' => 'data', 'contents' => $validated['product_image_url']],
+                            ['name' => 'product_image_url', 'contents' => $validated['product_image_url']],
+                        ]
+                    ]);
+
+                    Log::info("Sent to n8n successfully", [
+                        'job_id' => $jobId,
+                        'status_code' => $response->getStatusCode(),
+                        'image_url' => $validated['product_image_url']
+                    ]);
+                } catch (\Exception $e) {
+                    Log::error("Failed to send to n8n: " . $e->getMessage(), [
+                        'job_id' => $jobId,
+                        'url' => $n8nWebhookUrl
+                    ]);
+                    // Don't fail the request if n8n fails, just log it
+                }
+            } else {
+                Log::warning("N8N_WEBHOOK_URL not set. Job created but not sent.");
             }
-        } else {
-            Log::warning("N8N_WEBHOOK_URL not set. Job created but not sent.");
-        }
 
-        return response()->json(['job_id' => $jobId, 'status' => 'pending']);
+            return response()->json(['job_id' => $jobId, 'status' => 'pending']);
+        } catch (\Exception $e) {
+            Log::error("Generate Error: " . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
     }
 
     // 3. Check Status
@@ -140,9 +152,8 @@ class VideoGenerationController extends Controller
             return response()->json(['error' => 'Video not found'], 404);
         }
 
-        $path = Storage::path($job->video_url);
-
-        return response()->file($path, [
+        // Use Storage::response() to handle both Local and GCS correctly
+        return Storage::response($job->video_url, null, [
             'Content-Type' => 'video/mp4',
             'Accept-Ranges' => 'bytes',
         ]);
@@ -172,5 +183,21 @@ class VideoGenerationController extends Controller
         return response()->json([
             'jobs' => $jobs
         ]);
+    }
+
+    // 6. Delete Video
+    public function destroy($jobId)
+    {
+        $job = VideoJob::where('job_id', $jobId)->firstOrFail();
+
+        // Delete file from storage if it exists
+        if ($job->video_url && Storage::exists($job->video_url)) {
+            Storage::delete($job->video_url);
+        }
+
+        // Delete record from DB
+        $job->delete();
+
+        return response()->json(['message' => 'Video deleted successfully']);
     }
 }
