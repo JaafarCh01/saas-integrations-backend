@@ -40,7 +40,7 @@ class VideoWebhookController extends Controller
                     $videoUrl .= $separator . 'key=' . config('services.google.api_key');
                 }
 
-                $response = Http::get($videoUrl);
+                $response = Http::timeout(120)->get($videoUrl);
 
                 if ($response->failed()) {
                     throw new \Exception("Failed to download video. Status: " . $response->status());
