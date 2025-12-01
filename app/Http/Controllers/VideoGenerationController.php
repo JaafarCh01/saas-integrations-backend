@@ -139,7 +139,7 @@ class VideoGenerationController extends Controller
         return response()->json([
             'job_id' => $job->job_id,
             'status' => $job->status,
-            'video_url' => $job->video_url ? route('video.proxy', ['jobId' => $job->job_id]) : null,
+            'video_url' => $job->video_url ? 'https://storage.googleapis.com/' . config('filesystems.disks.gcs.bucket') . '/' . $job->video_url : null,
         ]);
     }
 
@@ -176,7 +176,7 @@ class VideoGenerationController extends Controller
                     'product_name' => $job->product_name,
                     'status' => $job->status,
                     'created_at' => $job->created_at,
-                    'video_url' => $job->video_url ? route('video.proxy', ['jobId' => $job->job_id]) : null,
+                    'video_url' => $job->video_url ? 'https://storage.googleapis.com/' . config('filesystems.disks.gcs.bucket') . '/' . $job->video_url : null,
                 ];
             });
 
@@ -188,16 +188,21 @@ class VideoGenerationController extends Controller
     // 6. Delete Video
     public function destroy($jobId)
     {
-        $job = VideoJob::where('job_id', $jobId)->firstOrFail();
+        try {
+            $job = VideoJob::where('job_id', $jobId)->firstOrFail();
 
-        // Delete file from storage if it exists
-        if ($job->video_url && Storage::exists($job->video_url)) {
-            Storage::delete($job->video_url);
+            // Delete file from storage if it exists
+            if ($job->video_url && Storage::exists($job->video_url)) {
+                Storage::delete($job->video_url);
+            }
+
+            // Delete record from DB
+            $job->delete();
+
+            return response()->json(['message' => 'Video deleted successfully']);
+        } catch (\Exception $e) {
+            Log::error("Delete Error: " . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
         }
-
-        // Delete record from DB
-        $job->delete();
-
-        return response()->json(['message' => 'Video deleted successfully']);
     }
 }

@@ -55,7 +55,7 @@ class VideoWebhookController extends Controller
 
                 $videoContent = $response->body();
                 $filename = "videos/{$jobId}.mp4";
-                Storage::put($filename, $videoContent);
+                Storage::put($filename, $videoContent, 'public');
 
                 $job->update([
                     'status' => 'completed',
