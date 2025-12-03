@@ -38,6 +38,7 @@ return [
     'n8n' => [
         'webhook_url' => env('N8N_WEBHOOK_URL'),
         'webhook_secret' => env('N8N_WEBHOOK_SECRET'),
+        'whatsapp_webhook_url' => env('N8N_WHATSAPP_WEBHOOK_URL'),
     ],
 
     'google' => [
