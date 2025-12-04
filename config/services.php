@@ -45,4 +45,10 @@ return [
         'api_key' => env('GOOGLE_API_KEY'),
     ],
 
+    'twilio' => [
+        'account_sid' => env('TWILIO_ACCOUNT_SID'),
+        'auth_token' => env('TWILIO_AUTH_TOKEN'),
+        'whatsapp_webhook_url' => env('APP_URL') . '/api/webhooks/whatsapp',
+    ],
+
 ];

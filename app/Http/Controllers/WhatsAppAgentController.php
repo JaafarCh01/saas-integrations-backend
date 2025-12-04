@@ -286,12 +286,14 @@ class WhatsAppAgentController extends Controller
             if ($n8nWebhookUrl) {
                 Http::timeout(30)->post($n8nWebhookUrl, [
                     'store_name' => $storeConfig->store_name,
+                    'store_phone' => $storeConfig->twilio_phone_number, // For n8n to know which number to reply FROM
                     'phone' => $customerPhone,
                     'message' => $body,
                 ]);
 
                 Log::info('Forwarded to n8n', [
                     'store_name' => $storeConfig->store_name,
+                    'store_phone' => $storeConfig->twilio_phone_number,
                     'phone' => $customerPhone,
                 ]);
             } else {

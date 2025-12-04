@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\VideoGenerationController;
 use App\Http\Controllers\VideoWebhookController;
 use App\Http\Controllers\WhatsAppAgentController;
+use App\Http\Controllers\WhatsAppProvisioningController;
 
 Route::middleware('api')->group(function () {
     // 1. Product Mock (Simulating Client SaaS)
@@ -34,6 +35,16 @@ Route::middleware('api')->group(function () {
         
         // Testing endpoint
         Route::post('/test', [WhatsAppAgentController::class, 'test']);
+    });
+
+    // 5. WhatsApp Number Provisioning API (v1)
+    Route::prefix('v1/provisioning')->group(function () {
+        Route::get('/countries', [WhatsAppProvisioningController::class, 'countries']);
+        Route::get('/search', [WhatsAppProvisioningController::class, 'search']);
+        Route::post('/buy', [WhatsAppProvisioningController::class, 'buy']);
+        Route::get('/status', [WhatsAppProvisioningController::class, 'status']);
+        Route::put('/config', [WhatsAppProvisioningController::class, 'updateConfig']);
+        Route::delete('/deactivate', [WhatsAppProvisioningController::class, 'deactivate']);
     });
 });
 
