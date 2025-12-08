@@ -329,5 +329,150 @@ class WhatsAppProvisioningController extends Controller
             'countries' => $countries,
         ]);
     }
+
+    /**
+     * Connect a user's own Twilio account
+     * 
+     * POST /api/v1/provisioning/connect-account
+     * { "store_name": "mugstroe", "sid": "ACxxx", "token": "xxx", "phone_number": "+1234567890" }
+     */
+    public function connectAccount(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'store_name' => 'required|string|max:100',
+            'sid' => 'required|string|starts_with:AC',
+            'token' => 'required|string|min:20',
+            'phone_number' => 'required|string|regex:/^\+[1-9]\d{1,14}$/',
+        ]);
+
+        $storeName = $validated['store_name'];
+        $sid = $validated['sid'];
+        $token = $validated['token'];
+        $phoneNumber = $validated['phone_number'];
+
+        // Step 1: Validate credentials by making a test API call
+        try {
+            $userTwilio = new TwilioClient($sid, $token);
+            
+            // Verify account is accessible
+            $account = $userTwilio->api->v2010->accounts($sid)->fetch();
+            
+            Log::info('Twilio credentials validated', [
+                'store_name' => $storeName,
+                'account_status' => $account->status,
+                'account_name' => $account->friendlyName,
+            ]);
+        } catch (TwilioException $e) {
+            Log::warning('Invalid Twilio credentials provided', [
+                'store_name' => $storeName,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Invalid Twilio credentials. Please check your Account SID and Auth Token.',
+            ], 401);
+        }
+
+        // Step 2: Find the phone number in user's Twilio account
+        try {
+            $incomingNumbers = $userTwilio->incomingPhoneNumbers->read([
+                'phoneNumber' => $phoneNumber,
+            ], 1);
+
+            if (empty($incomingNumbers)) {
+                return response()->json([
+                    'success' => false,
+                    'error' => "Phone number {$phoneNumber} not found in your Twilio account.",
+                ], 400);
+            }
+
+            $incomingNumber = $incomingNumbers[0];
+
+            Log::info('Phone number found in user account', [
+                'phone_number' => $phoneNumber,
+                'sid' => $incomingNumber->sid,
+            ]);
+        } catch (TwilioException $e) {
+            Log::error('Failed to lookup phone number', [
+                'store_name' => $storeName,
+                'phone_number' => $phoneNumber,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to lookup phone number: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        // Step 3: Auto-wire webhook URL to point to our Cloud Run endpoint
+        try {
+            $webhookUrl = config('services.twilio.whatsapp_webhook_url');
+
+            $userTwilio->incomingPhoneNumbers($incomingNumber->sid)->update([
+                'smsUrl' => $webhookUrl,
+                'smsMethod' => 'POST',
+                'voiceUrl' => $webhookUrl,
+                'voiceMethod' => 'POST',
+            ]);
+
+            Log::info('Webhook configured on user number', [
+                'phone_number' => $phoneNumber,
+                'webhook_url' => $webhookUrl,
+            ]);
+        } catch (TwilioException $e) {
+            Log::error('Failed to configure webhook', [
+                'store_name' => $storeName,
+                'phone_number' => $phoneNumber,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to configure webhook on your number: ' . $e->getMessage(),
+            ], 500);
+        }
+
+        // Step 4: Save/update store config with encrypted credentials
+        try {
+            $storeConfig = WhatsAppStoreConfig::updateOrCreate(
+                ['store_name' => $storeName],
+                [
+                    'twilio_sid' => $sid,
+                    'twilio_token' => $token, // Will be encrypted via model accessor
+                    'twilio_phone_number' => $phoneNumber,
+                    'is_active' => true,
+                ]
+            );
+
+            Log::info('Store config saved with user credentials', [
+                'store_name' => $storeName,
+                'phone_number' => $phoneNumber,
+                'config_id' => $storeConfig->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Twilio account connected successfully',
+                'data' => [
+                    'store_name' => $storeName,
+                    'phone_number' => $phoneNumber,
+                    'webhook_url' => $webhookUrl,
+                    'is_active' => true,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to save store config', [
+                'store_name' => $storeName,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to save configuration: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 }
 

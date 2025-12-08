@@ -45,6 +45,9 @@ Route::middleware('api')->group(function () {
         Route::get('/status', [WhatsAppProvisioningController::class, 'status']);
         Route::put('/config', [WhatsAppProvisioningController::class, 'updateConfig']);
         Route::delete('/deactivate', [WhatsAppProvisioningController::class, 'deactivate']);
+        
+        // Connect user's own Twilio account (new architecture)
+        Route::post('/connect-account', [WhatsAppProvisioningController::class, 'connectAccount']);
     });
 });
 

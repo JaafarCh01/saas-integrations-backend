@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Crypt;
+use Twilio\Rest\Client as TwilioClient;
 
 class WhatsAppStoreConfig extends Model
 {
@@ -17,6 +18,8 @@ class WhatsAppStoreConfig extends Model
      */
     protected $fillable = [
         'store_name',
+        'twilio_sid',
+        'twilio_token',
         'twilio_phone_number',
         'api_token',
         'is_active',
@@ -36,14 +39,20 @@ class WhatsAppStoreConfig extends Model
      */
     protected $hidden = [
         'api_token',
+        'twilio_token',
+        'twilio_sid',
     ];
 
     /**
      * Encrypt the API token when setting
      */
-    public function setApiTokenAttribute(string $value): void
+    public function setApiTokenAttribute(?string $value): void
     {
-        $this->attributes['api_token'] = Crypt::encryptString($value);
+        if ($value) {
+            $this->attributes['api_token'] = Crypt::encryptString($value);
+        } else {
+            $this->attributes['api_token'] = null;
+        }
     }
 
     /**
@@ -60,6 +69,54 @@ class WhatsAppStoreConfig extends Model
         } catch (\Exception $e) {
             return null;
         }
+    }
+
+    /**
+     * Encrypt the Twilio token when setting
+     */
+    public function setTwilioTokenAttribute(?string $value): void
+    {
+        if ($value) {
+            $this->attributes['twilio_token'] = Crypt::encryptString($value);
+        } else {
+            $this->attributes['twilio_token'] = null;
+        }
+    }
+
+    /**
+     * Decrypt the Twilio token when getting
+     */
+    public function getTwilioTokenAttribute(?string $value): ?string
+    {
+        if (!$value) {
+            return null;
+        }
+        
+        try {
+            return Crypt::decryptString($value);
+        } catch (\Exception $e) {
+            return null;
+        }
+    }
+
+    /**
+     * Check if this config has user-provided Twilio credentials
+     */
+    public function hasUserCredentials(): bool
+    {
+        return !empty($this->twilio_sid) && !empty($this->attributes['twilio_token']);
+    }
+
+    /**
+     * Get a Twilio client using this store's credentials
+     */
+    public function getTwilioClient(): ?TwilioClient
+    {
+        if (!$this->hasUserCredentials()) {
+            return null;
+        }
+
+        return new TwilioClient($this->twilio_sid, $this->twilio_token);
     }
 
     /**

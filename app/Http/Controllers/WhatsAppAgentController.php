@@ -284,17 +284,28 @@ class WhatsAppAgentController extends Controller
             $n8nWebhookUrl = config('services.n8n.whatsapp_webhook_url');
 
             if ($n8nWebhookUrl) {
-                Http::timeout(30)->post($n8nWebhookUrl, [
+                // Build payload with store info
+                $payload = [
                     'store_name' => $storeConfig->store_name,
                     'store_phone' => $storeConfig->twilio_phone_number, // For n8n to know which number to reply FROM
                     'phone' => $customerPhone,
                     'message' => $body,
-                ]);
+                ];
+
+                // Add user's Twilio credentials if they have connected their own account
+                // n8n will use these to send replies via the user's Twilio account
+                if ($storeConfig->hasUserCredentials()) {
+                    $payload['twilio_sid'] = $storeConfig->twilio_sid;
+                    $payload['twilio_token'] = $storeConfig->twilio_token; // Decrypted via accessor
+                }
+
+                Http::timeout(30)->post($n8nWebhookUrl, $payload);
 
                 Log::info('Forwarded to n8n', [
                     'store_name' => $storeConfig->store_name,
                     'store_phone' => $storeConfig->twilio_phone_number,
                     'phone' => $customerPhone,
+                    'has_user_credentials' => $storeConfig->hasUserCredentials(),
                 ]);
             } else {
                 Log::warning('N8N_WHATSAPP_WEBHOOK_URL not configured');
