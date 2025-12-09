@@ -54,13 +54,7 @@ class VideoGenerationController extends Controller
                 'product_name' => 'required',
                 'product_description' => 'nullable',
                 'product_image_url' => 'required|url',
-                'ugc_style' => 'required|in:authentic,professional,casual,energetic',
-                'video_duration' => 'nullable|integer|min:5|max:30',
-                'target_audience' => 'nullable|string',
-                'tone' => 'nullable|in:professional,enthusiastic,calm,playful,energetic',
-                'camera_movement' => 'nullable|in:static,handheld,smooth,dynamic',
-                'setting' => 'nullable|string',
-                'number_of_videos' => 'nullable|integer|min:1|max:5',
+                'custom_prompt' => 'nullable|string|max:1000',
             ]);
 
             Log::info('Debug DB Config', [
@@ -95,13 +89,7 @@ class VideoGenerationController extends Controller
                             ['name' => 'store_id', 'contents' => $validated['store_id']],
                             ['name' => 'product_name', 'contents' => $validated['product_name']],
                             ['name' => 'product_description', 'contents' => $validated['product_description'] ?? ''],
-                            ['name' => 'ugc_style', 'contents' => $validated['ugc_style']],
-                            ['name' => 'video_duration', 'contents' => (string) ($validated['video_duration'] ?? 7)],
-                            ['name' => 'target_audience', 'contents' => $validated['target_audience'] ?? ''],
-                            ['name' => 'tone', 'contents' => $validated['tone'] ?? 'energetic'],
-                            ['name' => 'camera_movement', 'contents' => $validated['camera_movement'] ?? 'handheld'],
-                            ['name' => 'setting', 'contents' => $validated['setting'] ?? 'urban'],
-                            ['name' => 'number_of_videos', 'contents' => (string) ($validated['number_of_videos'] ?? 1)],
+                            ['name' => 'custom_prompt', 'contents' => $validated['custom_prompt'] ?? ''],
                             // Send as both 'data' AND 'product_image_url' to match n8n workflow
                             ['name' => 'data', 'contents' => $validated['product_image_url']],
                             ['name' => 'product_image_url', 'contents' => $validated['product_image_url']],
