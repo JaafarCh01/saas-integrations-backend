@@ -9,6 +9,7 @@ class VideoJob extends Model
     protected $fillable = [
         'job_id',
         'store_id',
+        'product_id',
         'product_name',
         'product_description',
         'product_image_url',

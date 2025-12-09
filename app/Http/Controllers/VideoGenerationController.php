@@ -51,6 +51,7 @@ class VideoGenerationController extends Controller
         try {
             $validated = $request->validate([
                 'store_id' => 'required',
+                'product_id' => 'nullable|string',
                 'product_name' => 'required',
                 'product_description' => 'nullable',
                 'product_image_url' => 'required|url',
@@ -68,6 +69,7 @@ class VideoGenerationController extends Controller
             $job = VideoJob::create([
                 'job_id' => $jobId,
                 'store_id' => $validated['store_id'],
+                'product_id' => $validated['product_id'] ?? null,
                 'product_name' => $validated['product_name'],
                 'product_description' => $validated['product_description'] ?? '',
                 'product_image_url' => $validated['product_image_url'],
@@ -161,6 +163,7 @@ class VideoGenerationController extends Controller
                 return [
                     'job_id' => $job->job_id,
                     'store_id' => $job->store_id,
+                    'product_id' => $job->product_id,
                     'product_name' => $job->product_name,
                     'status' => $job->status,
                     'created_at' => $job->created_at,
