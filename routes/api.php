@@ -13,6 +13,7 @@ Route::middleware('api')->group(function () {
 
     // 2. Video Generation Flow (UGC Agent)
     Route::post('/ugc/generate', [VideoGenerationController::class, 'generate']);
+    Route::post('/ugc/generate-prompt', [VideoGenerationController::class, 'generatePrompt']);
     Route::get('/ugc/status/{jobId}', [VideoGenerationController::class, 'status']);
     Route::get('/ugc/video/{jobId}', [VideoGenerationController::class, 'proxyVideo'])->name('video.proxy');
     Route::delete('/ugc/video/{jobId}', [VideoGenerationController::class, 'destroy']);

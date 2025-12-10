@@ -196,4 +196,52 @@ class VideoGenerationController extends Controller
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
+
+    // 7. Generate AI Prompt for Video Description
+    public function generatePrompt(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'product_name' => 'required|string|max:255',
+                'product_description' => 'nullable|string|max:1000',
+            ]);
+
+            $n8nPromptWebhookUrl = config('services.n8n.prompt_webhook_url');
+
+            if (!$n8nPromptWebhookUrl) {
+                return response()->json([
+                    'error' => 'AI prompt generation is not configured'
+                ], 503);
+            }
+
+            $client = new Client(['timeout' => 30]);
+
+            $response = $client->post($n8nPromptWebhookUrl, [
+                'json' => [
+                    'product_name' => $validated['product_name'],
+                    'product_description' => $validated['product_description'] ?? '',
+                ]
+            ]);
+
+            $body = json_decode($response->getBody()->getContents(), true);
+
+            // n8n returns { "suggestion": "..." } from UGC Prompt Suggestor workflow
+            $prompt = $body['suggestion'] ?? $body['prompt'] ?? $body['output'] ?? $body['text'] ?? null;
+
+            if (!$prompt) {
+                Log::warning("n8n prompt response missing expected field", ['body' => $body]);
+                return response()->json([
+                    'error' => 'AI failed to generate a prompt'
+                ], 500);
+            }
+
+            return response()->json(['prompt' => $prompt]);
+
+        } catch (\Exception $e) {
+            Log::error("Generate Prompt Error: " . $e->getMessage());
+            return response()->json([
+                'error' => 'Failed to generate AI prompt: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }
