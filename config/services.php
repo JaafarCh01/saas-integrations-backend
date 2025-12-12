@@ -52,4 +52,13 @@ return [
         'whatsapp_webhook_url' => env('APP_URL') . '/api/webhooks/whatsapp',
     ],
 
+    'unipile' => [
+        'api_key' => env('UNIPILE_API_KEY'),
+        'api_url' => env('UNIPILE_API_URL', 'https://api.unipile.com'),
+    ],
+
+    'n8n_instagram' => [
+        'webhook_url' => env('N8N_INSTAGRAM_WEBHOOK_URL'),
+    ],
+
 ];
