@@ -58,6 +58,7 @@ Route::middleware('api')->group(function () {
     Route::prefix('instagram')->group(function () {
         Route::get('/connect', [InstagramController::class, 'connect']);
         Route::get('/status', [InstagramController::class, 'status']);
+        Route::get('/stats', [InstagramController::class, 'stats']);
         Route::put('/config', [InstagramController::class, 'updateConfig']);
         Route::delete('/disconnect', [InstagramController::class, 'disconnect']);
     });

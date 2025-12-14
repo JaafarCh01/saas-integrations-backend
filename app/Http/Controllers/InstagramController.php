@@ -24,6 +24,13 @@ class InstagramController extends Controller
         $storeName = $request->query('store_name');
 
         try {
+            // Pre-create or get the config record for this store
+            // This ensures we have a record to link the account_id to when OAuth completes
+            $config = InstagramConfig::firstOrCreate(
+                ['store_name' => $storeName],
+                ['is_active' => false] // Will be set to true when connection completes
+            );
+
             // Generate expiration time (1 hour from now) in strict UTC format with milliseconds
             // Unipile requires: YYYY-MM-DDTHH:MM:SS.sssZ
             $expiresOn = Carbon::now()->addHour()->utc()->format('Y-m-d\TH:i:s.v\Z');
@@ -93,6 +100,30 @@ class InstagramController extends Controller
             'instagram_username' => $config->instagram_username,
             'ai_active' => $config->ai_active,
             'ai_system_prompt' => $config->ai_system_prompt,
+        ]);
+    }
+
+    /**
+     * Get stats for Instagram agent.
+     * 
+     * GET /api/instagram/stats
+     */
+    public function stats(Request $request)
+    {
+        $request->validate([
+            'store_name' => 'required|string',
+        ]);
+
+        $storeName = $request->query('store_name');
+
+        // Import the model
+        $stats = \App\Models\InstagramLog::getStatsForStore($storeName);
+        $recentMessages = \App\Models\InstagramLog::getRecentConversations($storeName, 20);
+
+        return response()->json([
+            'success' => true,
+            'stats' => $stats,
+            'recent_messages' => $recentMessages,
         ]);
     }
 

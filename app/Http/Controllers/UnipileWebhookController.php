@@ -164,7 +164,41 @@ class UnipileWebhookController extends Controller
             return response()->json(['status' => 'self_message']);
         }
 
-        // 3. Dispatch job for async processing
+        // 3. Log incoming message to database
+        $accountId = $payload['account_id'] ?? null;
+        $chatId = $payload['chat_id'] ?? null;
+        $message = $payload['message'] ?? null;
+        $sender = $payload['sender'] ?? [];
+
+        // Find the store name from instagram_configs using account_id (multi-tenant)
+        // This is the PROPER way - each store has their account_id stored when they connect
+        $storeName = null;
+        if ($accountId) {
+            $config = InstagramConfig::findByUnipileAccountId($accountId);
+            $storeName = $config?->store_name;
+        }
+
+        // Fallback to webhook_name only if no config exists (shouldn't happen in normal flow)
+        if (!$storeName) {
+            $storeName = $payload['webhook_name'] ?? 'unknown';
+            Log::warning('Store not found by account_id, using webhook_name fallback', [
+                'account_id' => $accountId,
+                'webhook_name' => $storeName,
+            ]);
+        }
+
+        // Log the message
+        \App\Models\InstagramLog::create([
+            'store_name' => $storeName ?? 'unknown',
+            'unipile_account_id' => $accountId,
+            'chat_id' => $chatId,
+            'sender_name' => $sender['attendee_name'] ?? null,
+            'sender_username' => $sender['attendee_specifics']['public_identifier'] ?? null,
+            'user_message' => $message,
+            'status' => 'received',
+        ]);
+
+        // 4. Dispatch job for async processing
         ProcessInstagramWebhook::dispatch($payload);
 
         Log::info('Message dispatched for processing', ['message_id' => $messageId]);
