@@ -72,18 +72,32 @@ class WhatsAppAgentController extends Controller
     /**
      * POST /api/v1/agent/context
      * Called by n8n to get store context and conversation history
+     * Supports both WhatsApp (phone) and Instagram (conversation_id)
      */
     public function context(Request $request)
     {
         try {
             $validated = $request->validate([
                 'store_name' => 'required|string',
-                'phone' => 'required|string',
+                'phone' => 'nullable|string',           // Optional for WhatsApp
+                'conversation_id' => 'nullable|string', // Optional for Instagram
                 'message' => 'required|string',
             ]);
 
             $storeName = $validated['store_name'];
-            $conversationId = AgentLog::generateConversationId($storeName, $validated['phone']);
+
+            // Determine conversation ID (Instagram sends it directly, WhatsApp we generate from phone)
+            $conversationId = $validated['conversation_id'] ?? null;
+
+            if (!$conversationId && !empty($validated['phone'])) {
+                $conversationId = AgentLog::generateConversationId($storeName, $validated['phone']);
+            }
+
+            if (!$conversationId) {
+                return response()->json([
+                    'error' => 'Either phone or conversation_id is required'
+                ], 400);
+            }
 
             // Get store config to fetch from Devaito API
             $storeConfig = WhatsAppStoreConfig::findByStoreName($storeName);
@@ -134,7 +148,7 @@ class WhatsAppAgentController extends Controller
             return response()->json([
                 'conversation_id' => $conversationId,
                 'store_name' => $storeName,
-                'phone' => $validated['phone'],
+                'phone' => $validated['phone'] ?? null,
                 'history_formatted' => json_encode($historyFormatted),
                 'system_prompt' => json_encode($systemPrompt),
                 'message_count' => count($history),
@@ -434,7 +448,7 @@ class WhatsAppAgentController extends Controller
                 $devise = $product['devise'] ?? 'MAD';
                 $name = $product['name'] ?? 'Unknown';
                 $url = $product['url'] ?? '';
-                
+
                 $productCatalog .= "- {$name}: {$price} {$devise}";
                 if ($url) {
                     $productCatalog .= " - {$url}";
