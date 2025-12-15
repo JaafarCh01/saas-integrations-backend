@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\InstagramConfig;
+use Carbon\Carbon;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -14,6 +15,12 @@ use Illuminate\Support\Facades\Log;
 class ProcessInstagramWebhook implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
+
+    /**
+     * Maximum age (in minutes) for a message to be processed.
+     * Messages older than this are skipped to prevent spamming during history sync.
+     */
+    private const MAX_AGE_MINUTES = 5;
 
     public int $tries = 3;
     public int $backoff = 30;
@@ -37,6 +44,7 @@ class ProcessInstagramWebhook implements ShouldQueue
         $accountId = $this->payload['account_id'] ?? null;
         $chatId = $this->payload['chat_id'] ?? null;
         $messageText = $this->payload['message'] ?? null;
+        $messageTimestamp = $this->payload['timestamp'] ?? null;
 
         // Sender info is nested in 'sender' object
         $sender = $this->payload['sender'] ?? [];
@@ -45,6 +53,33 @@ class ProcessInstagramWebhook implements ShouldQueue
         if (!$accountId) {
             Log::warning('ProcessInstagramWebhook: Missing account_id', $this->payload);
             return;
+        }
+
+        // ============================================================
+        // OLD MESSAGE FILTER - Prevent spam during Unipile history sync
+        // ============================================================
+        if ($messageTimestamp) {
+            try {
+                $messageTime = Carbon::parse($messageTimestamp);
+                $messageAgeMinutes = now()->diffInMinutes($messageTime);
+
+                if ($messageAgeMinutes > self::MAX_AGE_MINUTES) {
+                    Log::info('ProcessInstagramWebhook: Skipping old message (history sync)', [
+                        'account_id' => $accountId,
+                        'chat_id' => $chatId,
+                        'message_age_minutes' => $messageAgeMinutes,
+                        'threshold_minutes' => self::MAX_AGE_MINUTES,
+                        'timestamp' => $messageTimestamp,
+                    ]);
+                    return; // Skip - do NOT save to DB or forward to n8n
+                }
+            } catch (\Exception $e) {
+                Log::warning('ProcessInstagramWebhook: Failed to parse timestamp', [
+                    'timestamp' => $messageTimestamp,
+                    'error' => $e->getMessage(),
+                ]);
+                // Continue processing if timestamp parsing fails (edge case)
+            }
         }
 
         // Find the user by account ID
@@ -65,13 +100,14 @@ class ProcessInstagramWebhook implements ShouldQueue
             return;
         }
 
-        // Build payload for n8n
+        // Build payload for n8n (including timestamp for context)
         $n8nPayload = [
             'user_id' => $config->id,
             'store_name' => $config->store_name,
             'unipile_account_id' => $accountId,
             'unipile_chat_id' => $chatId,
             'message_text' => $messageText,
+            'message_timestamp' => $messageTimestamp,
             'system_prompt' => $config->ai_system_prompt ?? 'You are a helpful sales assistant. Be friendly and concise.',
             'sender_name' => $senderName,
         ];
@@ -106,3 +142,4 @@ class ProcessInstagramWebhook implements ShouldQueue
         }
     }
 }
+
