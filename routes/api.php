@@ -61,6 +61,8 @@ Route::middleware('api')->group(function () {
         Route::get('/stats', [InstagramController::class, 'stats']);
         Route::put('/config', [InstagramController::class, 'updateConfig']);
         Route::delete('/disconnect', [InstagramController::class, 'disconnect']);
+        Route::get('/conversations/{storeName}', [InstagramController::class, 'conversations']);
+        Route::get('/conversation/{conversationId}', [InstagramController::class, 'conversationHistory']);
     });
 });
 

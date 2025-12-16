@@ -224,4 +224,38 @@ class InstagramController extends Controller
             'message' => 'Instagram disconnected successfully',
         ]);
     }
+
+    /**
+     * Get list of conversations for a store (grouped by chat_id).
+     * 
+     * GET /api/instagram/conversations/{storeName}
+     */
+    public function conversations(string $storeName)
+    {
+        $conversations = \App\Models\InstagramLog::getConversationSummaries($storeName);
+
+        return response()->json([
+            'success' => true,
+            'conversations' => $conversations,
+        ]);
+    }
+
+    /**
+     * Get full conversation history by conversation_id (chat_id).
+     * 
+     * GET /api/instagram/conversation/{conversationId}
+     */
+    public function conversationHistory(string $conversationId)
+    {
+        $history = \App\Models\InstagramLog::getConversationHistory($conversationId);
+
+        if (empty($history)) {
+            return response()->json([
+                'error' => 'Conversation not found',
+            ], 404);
+        }
+
+        return response()->json($history);
+    }
 }
+
