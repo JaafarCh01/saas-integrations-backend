@@ -16,25 +16,34 @@ class WhatsAppAgentController extends Controller
     /**
      * POST /api/v1/agent/log
      * Called by n8n to log each conversation turn
+     * Supports both WhatsApp (conversation_id format) and Instagram (explicit fields)
      */
     public function log(Request $request)
     {
         try {
             $validated = $request->validate([
                 'conversation_id' => 'required|string',
+                'store_name' => 'nullable|string',           // Optional: for Instagram (explicit)
+                'customer_identifier' => 'nullable|string',  // Optional: phone or chat_id
                 'user_message' => 'nullable|string',
                 'ai_response' => 'nullable|string',
                 'cost_tokens' => 'required|integer|min:0',
             ]);
 
-            // Extract store_name and phone from conversation_id
-            $storeName = AgentLog::extractStoreName($validated['conversation_id']);
-            $phone = AgentLog::extractPhone($validated['conversation_id']);
+            // Try explicit store_name first, otherwise extract from conversation_id
+            $storeName = $validated['store_name'] ?? AgentLog::extractStoreName($validated['conversation_id']);
+            $customerIdentifier = $validated['customer_identifier'] ?? AgentLog::extractPhone($validated['conversation_id']);
 
-            if (!$storeName || !$phone) {
+            // Fallback: if still no store_name, try to extract from conversation_id
+            if (!$storeName) {
                 return response()->json([
-                    'error' => 'Invalid conversation_id format. Expected: {store_name}_{phone}'
+                    'error' => 'store_name is required (either as field or in conversation_id format {store}_{phone})'
                 ], 400);
+            }
+
+            // Customer identifier is optional for Instagram (can use conversation_id as identifier)
+            if (!$customerIdentifier) {
+                $customerIdentifier = $validated['conversation_id'];
             }
 
             // Calculate cost
@@ -44,7 +53,7 @@ class WhatsAppAgentController extends Controller
             $log = AgentLog::create([
                 'store_name' => $storeName,
                 'conversation_id' => $validated['conversation_id'],
-                'customer_phone' => $phone,
+                'customer_phone' => $customerIdentifier,
                 'user_message' => $validated['user_message'],
                 'ai_response' => $validated['ai_response'],
                 'tokens_used' => $validated['cost_tokens'],
@@ -52,9 +61,10 @@ class WhatsAppAgentController extends Controller
                 'status' => 'success',
             ]);
 
-            Log::info('WhatsApp agent log created', [
+            Log::info('Agent log created', [
                 'log_id' => $log->id,
                 'conversation_id' => $validated['conversation_id'],
+                'store_name' => $storeName,
                 'tokens' => $validated['cost_tokens'],
                 'cost' => $cost,
             ]);
@@ -65,7 +75,7 @@ class WhatsAppAgentController extends Controller
                 'cost_usd' => $cost,
             ]);
         } catch (\Exception $e) {
-            Log::error('WhatsApp agent log error: ' . $e->getMessage());
+            Log::error('Agent log error: ' . $e->getMessage());
             return response()->json(['error' => $e->getMessage()], 500);
         }
     }
