@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\AgentLog;
+use App\Models\InstagramConfig;
 use App\Models\WhatsAppStoreConfig;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -106,9 +107,13 @@ class WhatsAppAgentController extends Controller
             $storeInfo = null;
             $products = [];
 
-            if ($storeConfig) {
+            // Try api_token first, otherwise call Devaito API directly using store_name
+            if ($storeConfig && $storeConfig->api_token) {
                 $storeInfo = $this->fetchStoreInfo($storeConfig);
                 $products = $this->fetchProducts($storeConfig);
+            } else {
+                // Fallback: fetch products directly using store_name (no auth needed)
+                $products = $this->fetchProductsByStoreName($storeName);
             }
 
             // Fetch last 5 messages for conversation history
@@ -407,6 +412,88 @@ class WhatsAppAgentController extends Controller
      * Fetch products from Devaito API
      */
     private function fetchProducts(WhatsAppStoreConfig $config, int $limit = 50): array
+    {
+        $cacheKey = "store_products_{$config->store_name}";
+
+        return Cache::remember($cacheKey, 300, function () use ($config, $limit) {
+            try {
+                $response = Http::withToken($config->api_token)
+                    ->timeout(15)
+                    ->get("{$config->getApiBaseUrl()}/fetch-all-products", [
+                        'limit' => $limit,
+                        'page' => 1,
+                    ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    return $data['products'] ?? [];
+                }
+            } catch (\Exception $e) {
+                Log::error("Failed to fetch products for {$config->store_name}: " . $e->getMessage());
+            }
+
+            return [];
+        });
+    }
+
+    /**
+     * Fetch products from Devaito API using just the store name (no auth required)
+     * Fallback when no api_token is available
+     */
+    private function fetchProductsByStoreName(string $storeName, int $limit = 50): array
+    {
+        $cacheKey = "store_products_{$storeName}";
+
+        return Cache::remember($cacheKey, 300, function () use ($storeName, $limit) {
+            try {
+                $url = "https://{$storeName}.devaito.com/api/v1/ai-agent/fetch-all-products";
+
+                $response = Http::timeout(15)->get($url, [
+                    'limit' => $limit,
+                    'page' => 1,
+                ]);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    return $data['products'] ?? [];
+                }
+            } catch (\Exception $e) {
+                Log::error("Failed to fetch products for {$storeName}: " . $e->getMessage());
+            }
+
+            return [];
+        });
+    }
+
+    /**
+     * Fetch store info from Devaito API (Instagram config)
+     */
+    private function fetchStoreInfoFromInstagram(InstagramConfig $config): ?array
+    {
+        $cacheKey = "store_info_{$config->store_name}";
+
+        return Cache::remember($cacheKey, 300, function () use ($config) {
+            try {
+                $response = Http::withToken($config->api_token)
+                    ->timeout(10)
+                    ->get("{$config->getApiBaseUrl()}/user");
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    return $data['data'] ?? null;
+                }
+            } catch (\Exception $e) {
+                Log::error("Failed to fetch store info for {$config->store_name}: " . $e->getMessage());
+            }
+
+            return null;
+        });
+    }
+
+    /**
+     * Fetch products from Devaito API (Instagram config)
+     */
+    private function fetchProductsFromInstagram(InstagramConfig $config, int $limit = 50): array
     {
         $cacheKey = "store_products_{$config->store_name}";
 

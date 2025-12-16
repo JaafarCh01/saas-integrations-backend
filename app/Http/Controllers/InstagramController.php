@@ -23,13 +23,25 @@ class InstagramController extends Controller
 
         $storeName = $request->query('store_name');
 
+        // Capture the Devaito API token from Bearer header (passed from iframe)
+        $apiToken = $request->bearerToken();
+
         try {
             // Pre-create or get the config record for this store
             // This ensures we have a record to link the account_id to when OAuth completes
             $config = InstagramConfig::firstOrCreate(
                 ['store_name' => $storeName],
-                ['is_active' => false] // Will be set to true when connection completes
+                [
+                    'is_active' => false, // Will be set to true when connection completes
+                    'api_token' => $apiToken, // Store the Devaito API token
+                ]
             );
+
+            // If config already exists but doesn't have api_token, update it
+            if (!$config->api_token && $apiToken) {
+                $config->api_token = $apiToken;
+                $config->save();
+            }
 
             // Generate expiration time (1 hour from now) in strict UTC format with milliseconds
             // Unipile requires: YYYY-MM-DDTHH:MM:SS.sssZ
