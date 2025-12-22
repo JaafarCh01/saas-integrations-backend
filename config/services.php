@@ -61,4 +61,17 @@ return [
         'webhook_url' => env('N8N_INSTAGRAM_WEBHOOK_URL'),
     ],
 
+    // Cloud Scheduler secret for cron endpoints
+    'cron_secret' => env('CRON_SECRET'),
+
+    // Gemini AI (for Email Agent)
+    'gemini' => [
+        'api_key' => env('GEMINI_API_KEY'),
+    ],
+
+    // n8n Email Webhook (Hybrid Polling)
+    'n8n_email' => [
+        'webhook_url' => env('N8N_EMAIL_WEBHOOK_URL'),
+    ],
+
 ];

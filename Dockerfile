@@ -1,7 +1,7 @@
 # Use the official PHP image with Apache
-FROM php:8.2-apache
+FROM php:8.2-apache-bookworm
 
-# Install system dependencies
+# Install system dependencies (ADDED: libc-client-dev, libkrb5-dev for IMAP)
 RUN apt-get update && apt-get install -y \
     libpng-dev \
     libonig-dev \
@@ -11,13 +11,18 @@ RUN apt-get update && apt-get install -y \
     git \
     curl \
     libzip-dev \
-    ffmpeg
+    ffmpeg \
+    libc-client-dev \
+    libkrb5-dev
 
 # Clear cache
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Install PHP extensions
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip
+# Configure IMAP (REQUIRED for Email Agent)
+RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl
+
+# Install PHP extensions (ADDED: imap)
+RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip imap
 
 # Enable Apache mod_rewrite
 RUN a2enmod rewrite

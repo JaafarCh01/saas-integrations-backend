@@ -64,6 +64,35 @@ Route::middleware('api')->group(function () {
         Route::get('/conversations/{storeName}', [InstagramController::class, 'conversations']);
         Route::get('/conversation/{conversationId}', [InstagramController::class, 'conversationHistory']);
     });
+
+    // 7. Email AI Agent API
+    Route::prefix('email')->group(function () {
+        Route::post('/connect', [\App\Http\Controllers\EmailAgentController::class, 'connect']);
+        Route::get('/status', [\App\Http\Controllers\EmailAgentController::class, 'status']);
+        Route::get('/stats', [\App\Http\Controllers\EmailAgentController::class, 'stats']);
+        Route::put('/config', [\App\Http\Controllers\EmailAgentController::class, 'updateConfig']);
+        Route::delete('/disconnect', [\App\Http\Controllers\EmailAgentController::class, 'disconnect']);
+        Route::get('/conversations/{storeName}', [\App\Http\Controllers\EmailAgentController::class, 'conversations']);
+        Route::get('/conversation/{conversationId}', [\App\Http\Controllers\EmailAgentController::class, 'conversationHistory']);
+        Route::post('/test', [\App\Http\Controllers\EmailAgentController::class, 'testConnection']);
+    });
+
+    // 8. Cron/Scheduler Triggers (for Cloud Run)
+    // Called by Google Cloud Scheduler via HTTP
+    Route::prefix('cron')->group(function () {
+        Route::post('/poll-emails', function (Request $request) {
+            // Verify cron secret to prevent unauthorized access
+            $secret = $request->header('X-Cron-Secret');
+            if ($secret !== config('services.cron_secret')) {
+                return response()->json(['error' => 'Unauthorized'], 401);
+            }
+
+            // Dispatch the job synchronously (Cloud Run will wait)
+            \App\Jobs\PollEmailInboxes::dispatchSync();
+
+            return response()->json(['success' => true, 'message' => 'Email polling completed']);
+        });
+    });
 });
 
 Route::get('/user', function (Request $request) {
