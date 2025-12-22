@@ -143,10 +143,20 @@ class PollEmailInboxes implements ShouldQueue
             $referencesStr = $references;
         }
 
+        // Generate conversation ID (same logic used when logging)
+        $conversationId = EmailLog::generateConversationId(
+            $config->store_name,
+            $referencesStr,
+            $subjectStr
+        );
+
         // Build payload with email content + SMTP credentials
         $payload = [
             // Account identifier
             'config_id' => $config->id,
+
+            // Conversation ID for n8n to use when logging AI response
+            'conversation_id' => $conversationId,
 
             // Email content (all cast to strings)
             'subject' => $subjectStr,

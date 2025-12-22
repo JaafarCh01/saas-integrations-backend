@@ -79,10 +79,12 @@ class EmailLog extends Model
 
     /**
      * Get full conversation history by conversation_id
+     * Queries agent_logs for AI responses (same pattern as Instagram)
      */
     public static function getConversationHistory(string $conversationId): array
     {
-        $messages = self::where('conversation_id', $conversationId)
+        // Query agent_logs which stores both user messages and AI responses
+        $messages = \App\Models\AgentLog::where('conversation_id', $conversationId)
             ->orderBy('created_at', 'asc')
             ->get();
 
@@ -90,14 +92,15 @@ class EmailLog extends Model
             return [];
         }
 
-        $first = $messages->first();
+        // Get sender info from email_logs
+        $emailLog = self::where('conversation_id', $conversationId)->first();
 
         return [
             'conversation_id' => $conversationId,
-            'store_name' => $first->store_name,
-            'from_name' => $first->from_name,
-            'from_email' => $first->from_email,
-            'subject' => $first->subject,
+            'store_name' => $messages->first()->store_name,
+            'from_name' => $emailLog?->from_name,
+            'from_email' => $emailLog?->from_email,
+            'subject' => $emailLog?->subject,
             'messages' => $messages->map(fn($m) => [
                 'id' => $m->id,
                 'user_message' => $m->user_message,
