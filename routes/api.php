@@ -8,6 +8,7 @@ use App\Http\Controllers\WhatsAppAgentController;
 use App\Http\Controllers\WhatsAppProvisioningController;
 use App\Http\Controllers\InstagramController;
 use App\Http\Controllers\UnipileWebhookController;
+use App\Http\Controllers\LeadController;
 
 Route::middleware('api')->group(function () {
     // 1. Product Mock (Simulating Client SaaS)
@@ -93,6 +94,24 @@ Route::middleware('api')->group(function () {
             return response()->json(['success' => true, 'message' => 'Email polling completed']);
         });
     });
+
+    // 9. Lead Generation Agent API
+    Route::prefix('leads')->group(function () {
+        Route::post('/ingest', [LeadController::class, 'ingest']);
+        Route::get('/pending', [LeadController::class, 'pending']);
+        Route::get('/stats', [LeadController::class, 'stats']);
+        Route::post('/{id}/mark-sent', [LeadController::class, 'markSent']);
+        Route::post('/{id}/reject', [LeadController::class, 'reject']);
+    });
+
+    // 10. Lead Config API (for settings page)
+    Route::prefix('lead-config')->group(function () {
+        Route::get('/status', [LeadController::class, 'configStatus']);
+        Route::post('/save', [LeadController::class, 'saveConfig']);
+    });
+
+    // 11. n8n Agent Discovery
+    Route::get('/agents/active', [LeadController::class, 'activeAgents']);
 });
 
 Route::get('/user', function (Request $request) {
