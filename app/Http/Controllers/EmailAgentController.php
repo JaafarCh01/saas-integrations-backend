@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AgentLog;
 use App\Models\EmailConfig;
 use App\Models\EmailLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Mail;
 use Webklex\PHPIMAP\ClientManager;
 class EmailAgentController extends Controller
 {
@@ -107,6 +109,7 @@ class EmailAgentController extends Controller
             'provider' => $config->provider,
             'ai_active' => $config->ai_active,
             'ai_system_prompt' => $config->ai_system_prompt,
+            'manual_approval' => $config->manual_approval,
             'last_polled_at' => $config->last_polled_at?->toISOString(),
             'last_error' => $config->last_error,
         ]);
@@ -123,6 +126,7 @@ class EmailAgentController extends Controller
             'store_name' => 'required|string',
             'ai_active' => 'sometimes|boolean',
             'ai_system_prompt' => 'sometimes|nullable|string',
+            'manual_approval' => 'sometimes|boolean',
         ]);
 
         $storeName = $request->input('store_name');
@@ -140,6 +144,9 @@ class EmailAgentController extends Controller
         if ($request->has('ai_system_prompt')) {
             $config->ai_system_prompt = $request->input('ai_system_prompt');
         }
+        if ($request->has('manual_approval')) {
+            $config->manual_approval = $request->input('manual_approval');
+        }
 
         $config->save();
 
@@ -147,6 +154,7 @@ class EmailAgentController extends Controller
             'success' => true,
             'ai_active' => $config->ai_active,
             'ai_system_prompt' => $config->ai_system_prompt,
+            'manual_approval' => $config->manual_approval,
         ]);
     }
 
@@ -271,4 +279,94 @@ class EmailAgentController extends Controller
             ], 400);
         }
     }
+
+    /**
+     * Approve a draft reply and send via SMTP
+     * 
+     * POST /api/email/{id}/approve
+     */
+    public function approveDraft(int $id)
+    {
+        try {
+            $log = AgentLog::findOrFail($id);
+
+            // Verify this is a pending draft
+            if ($log->approval_status !== 'pending_approval') {
+                return response()->json([
+                    'error' => 'This message is not pending approval',
+                    'current_status' => $log->approval_status,
+                ], 400);
+            }
+
+            // Verify we have draft content
+            if (empty($log->draft_reply)) {
+                return response()->json([
+                    'error' => 'No draft reply found for this message',
+                ], 400);
+            }
+
+            // Get email config for SMTP credentials
+            $config = EmailConfig::findByStoreName($log->store_name);
+            if (!$config) {
+                return response()->json([
+                    'error' => 'Email configuration not found for store: ' . $log->store_name,
+                ], 404);
+            }
+
+            // Configure dynamic mailer with store's SMTP settings
+            config(['mail.mailers.dynamic' => $config->getSmtpConfig()]);
+
+            // Determine recipient email
+            $recipientEmail = $log->reply_to_email ?? $log->customer_phone; // customer_phone may contain email for email agent
+            if (empty($recipientEmail) || !filter_var($recipientEmail, FILTER_VALIDATE_EMAIL)) {
+                return response()->json([
+                    'error' => 'No valid recipient email address found',
+                ], 400);
+            }
+
+            // Build subject line
+            $subject = $log->reply_subject
+                ? 'Re: ' . preg_replace('/^Re:\s*/i', '', $log->reply_subject)
+                : 'Re: Your inquiry';
+
+            // Send the email via Laravel Mailer
+            Mail::mailer('dynamic')->raw($log->draft_reply, function ($message) use ($recipientEmail, $subject, $config) {
+                $message->to($recipientEmail)
+                    ->subject($subject)
+                    ->from($config->email_address, $config->store_name);
+            });
+
+            // Update the log record
+            $log->update([
+                'approval_status' => 'approved',
+                'ai_response' => $log->draft_reply,  // Copy draft to ai_response
+                'status' => 'success',
+            ]);
+
+            Log::info('Email draft approved and sent', [
+                'log_id' => $log->id,
+                'store_name' => $log->store_name,
+                'recipient' => $recipientEmail,
+                'subject' => $subject,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Email sent successfully',
+                'recipient' => $recipientEmail,
+                'subject' => $subject,
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Email approve/send error', [
+                'log_id' => $id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to send email: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
 }
+

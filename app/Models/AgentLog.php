@@ -24,6 +24,11 @@ class AgentLog extends Model
         'tokens_used',
         'cost_estimate_usd',
         'status',
+        'action',           // 'replied', 'draft_generated'
+        'draft_reply',      // AI draft text for manual approval
+        'approval_status',  // 'pending_approval', 'approved', 'rejected'
+        'reply_to_email',   // Customer email for SMTP reply
+        'reply_subject',    // Email subject for reply
     ];
 
     /**

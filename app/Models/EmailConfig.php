@@ -50,6 +50,7 @@ class EmailConfig extends Model
         'smtp_encryption',
         'ai_active',
         'ai_system_prompt',
+        'manual_approval',
         'api_token',
         'is_active',
         'last_polled_at',
@@ -59,6 +60,7 @@ class EmailConfig extends Model
     protected $casts = [
         'ai_active' => 'boolean',
         'is_active' => 'boolean',
+        'manual_approval' => 'boolean',
         'imap_port' => 'integer',
         'smtp_port' => 'integer',
         'last_polled_at' => 'datetime',

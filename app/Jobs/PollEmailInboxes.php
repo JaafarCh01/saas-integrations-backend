@@ -166,7 +166,7 @@ class PollEmailInboxes implements ShouldQueue
             'message_id' => $messageIdStr,
             'references' => $referencesStr,
 
-            // SMTP credentials for n8n to reply
+            // SMTP credentials for n8n to reply (only used if manual_mode is false)
             'smtp_host' => $config->smtp_host,
             'smtp_port' => $config->smtp_port,
             'smtp_user' => $config->email_address,
@@ -175,6 +175,9 @@ class PollEmailInboxes implements ShouldQueue
             // Store context
             'store_name' => $config->store_name,
             'ai_system_prompt' => $config->ai_system_prompt,
+
+            // Manual Approval Mode: if true, n8n skips SMTP and returns draft for approval
+            'manual_mode' => (bool) $config->manual_approval,
         ];
 
         Log::info('PollEmailInboxes: Forwarding to n8n', [

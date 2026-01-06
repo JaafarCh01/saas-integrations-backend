@@ -76,6 +76,8 @@ Route::middleware('api')->group(function () {
         Route::get('/conversations/{storeName}', [\App\Http\Controllers\EmailAgentController::class, 'conversations']);
         Route::get('/conversation/{conversationId}', [\App\Http\Controllers\EmailAgentController::class, 'conversationHistory']);
         Route::post('/test', [\App\Http\Controllers\EmailAgentController::class, 'testConnection']);
+        // Manual Approval Mode: approve and send draft reply
+        Route::post('/{id}/approve', [\App\Http\Controllers\EmailAgentController::class, 'approveDraft']);
     });
 
     // 8. Cron/Scheduler Triggers (for Cloud Run)

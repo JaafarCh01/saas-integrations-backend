@@ -17,17 +17,22 @@ class WhatsAppAgentController extends Controller
      * POST /api/v1/agent/log
      * Called by n8n to log each conversation turn
      * Supports both WhatsApp (conversation_id format) and Instagram (explicit fields)
+     * Also supports Email Manual Approval Mode with action: 'draft_generated'
      */
     public function log(Request $request)
     {
         try {
             $validated = $request->validate([
                 'conversation_id' => 'required|string',
-                'store_name' => 'nullable|string',           // Optional: for Instagram (explicit)
+                'store_name' => 'nullable|string',           // Optional: for Instagram/Email (explicit)
                 'customer_identifier' => 'nullable|string',  // Optional: phone or chat_id
                 'user_message' => 'nullable|string',
                 'ai_response' => 'nullable|string',
                 'cost_tokens' => 'required|integer|min:0',
+                // Manual Approval Mode fields (Email Agent)
+                'action' => 'nullable|string|in:replied,draft_generated',
+                'reply_to_email' => 'nullable|email',
+                'reply_subject' => 'nullable|string',
             ]);
 
             // Try explicit store_name first, otherwise extract from conversation_id
@@ -49,16 +54,26 @@ class WhatsAppAgentController extends Controller
             // Calculate cost
             $cost = AgentLog::calculateCost($validated['cost_tokens']);
 
+            // Determine status based on action (for Manual Approval Mode)
+            $action = $validated['action'] ?? 'replied';
+            $isDraft = $action === 'draft_generated';
+
             // Create log entry
             $log = AgentLog::create([
                 'store_name' => $storeName,
                 'conversation_id' => $validated['conversation_id'],
                 'customer_phone' => $customerIdentifier,
                 'user_message' => $validated['user_message'],
-                'ai_response' => $validated['ai_response'],
+                'ai_response' => $isDraft ? null : $validated['ai_response'],  // Don't set ai_response for drafts
                 'tokens_used' => $validated['cost_tokens'],
                 'cost_estimate_usd' => $cost,
                 'status' => 'success',
+                // Manual Approval Mode fields
+                'action' => $action,
+                'draft_reply' => $isDraft ? $validated['ai_response'] : null,
+                'approval_status' => $isDraft ? 'pending_approval' : null,
+                'reply_to_email' => $validated['reply_to_email'] ?? null,
+                'reply_subject' => $validated['reply_subject'] ?? null,
             ]);
 
             Log::info('Agent log created', [
@@ -67,12 +82,16 @@ class WhatsAppAgentController extends Controller
                 'store_name' => $storeName,
                 'tokens' => $validated['cost_tokens'],
                 'cost' => $cost,
+                'action' => $action,
+                'is_draft' => $isDraft,
             ]);
 
             return response()->json([
                 'success' => true,
                 'log_id' => $log->id,
                 'cost_usd' => $cost,
+                'action' => $action,
+                'approval_status' => $isDraft ? 'pending_approval' : null,
             ]);
         } catch (\Exception $e) {
             Log::error('Agent log error: ' . $e->getMessage());
