@@ -23,6 +23,7 @@ class WhatsAppStoreConfig extends Model
         'twilio_phone_number',
         'api_token',
         'is_active',
+        'is_sandbox',
     ];
 
     /**
@@ -30,6 +31,7 @@ class WhatsAppStoreConfig extends Model
      */
     protected $casts = [
         'is_active' => 'boolean',
+        'is_sandbox' => 'boolean',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
@@ -63,7 +65,7 @@ class WhatsAppStoreConfig extends Model
         if (!$value) {
             return null;
         }
-        
+
         try {
             return Crypt::decryptString($value);
         } catch (\Exception $e) {
@@ -91,7 +93,7 @@ class WhatsAppStoreConfig extends Model
         if (!$value) {
             return null;
         }
-        
+
         try {
             return Crypt::decryptString($value);
         } catch (\Exception $e) {
@@ -126,7 +128,7 @@ class WhatsAppStoreConfig extends Model
     {
         // Normalize phone number (remove whatsapp: prefix if present)
         $normalizedPhone = str_replace('whatsapp:', '', $phoneNumber);
-        
+
         return self::where('twilio_phone_number', $normalizedPhone)
             ->where('is_active', true)
             ->first();

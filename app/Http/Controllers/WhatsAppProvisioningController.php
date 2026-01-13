@@ -45,7 +45,7 @@ class WhatsAppProvisioningController extends Controller
         foreach ($numberTypes as $type) {
             try {
                 $numbers = $this->searchByType($country, $type, $limit);
-                
+
                 if (!empty($numbers)) {
                     $availableNumbers = $numbers;
                     $usedType = $type;
@@ -334,7 +334,7 @@ class WhatsAppProvisioningController extends Controller
      * Connect a user's own Twilio account
      * 
      * POST /api/v1/provisioning/connect-account
-     * { "store_name": "mugstroe", "sid": "ACxxx", "token": "xxx", "phone_number": "+1234567890" }
+     * { "store_name": "mugstroe", "sid": "ACxxx", "token": "xxx", "phone_number": "+1234567890", "is_sandbox": false }
      */
     public function connectAccount(Request $request): JsonResponse
     {
@@ -343,24 +343,27 @@ class WhatsAppProvisioningController extends Controller
             'sid' => 'required|string|starts_with:AC',
             'token' => 'required|string|min:20',
             'phone_number' => 'required|string|regex:/^\+[1-9]\d{1,14}$/',
+            'is_sandbox' => 'sometimes|boolean',
         ]);
 
         $storeName = $validated['store_name'];
         $sid = $validated['sid'];
         $token = $validated['token'];
         $phoneNumber = $validated['phone_number'];
+        $isSandbox = $validated['is_sandbox'] ?? false;
 
         // Step 1: Validate credentials by making a test API call
         try {
             $userTwilio = new TwilioClient($sid, $token);
-            
+
             // Verify account is accessible
             $account = $userTwilio->api->v2010->accounts($sid)->fetch();
-            
+
             Log::info('Twilio credentials validated', [
                 'store_name' => $storeName,
                 'account_status' => $account->status,
                 'account_name' => $account->friendlyName,
+                'is_sandbox' => $isSandbox,
             ]);
         } catch (TwilioException $e) {
             Log::warning('Invalid Twilio credentials provided', [
@@ -374,64 +377,72 @@ class WhatsAppProvisioningController extends Controller
             ], 401);
         }
 
-        // Step 2: Find the phone number in user's Twilio account
-        try {
-            $incomingNumbers = $userTwilio->incomingPhoneNumbers->read([
-                'phoneNumber' => $phoneNumber,
-            ], 1);
+        $webhookUrl = config('services.twilio.whatsapp_webhook_url');
 
-            if (empty($incomingNumbers)) {
+        // Step 2 & 3: Skip for sandbox mode (shared number, user configures webhook manually)
+        if ($isSandbox) {
+            Log::info('Sandbox mode - skipping phone lookup and webhook auto-config', [
+                'store_name' => $storeName,
+                'phone_number' => $phoneNumber,
+            ]);
+        } else {
+            // Step 2: Find the phone number in user's Twilio account
+            try {
+                $incomingNumbers = $userTwilio->incomingPhoneNumbers->read([
+                    'phoneNumber' => $phoneNumber,
+                ], 1);
+
+                if (empty($incomingNumbers)) {
+                    return response()->json([
+                        'success' => false,
+                        'error' => "Phone number {$phoneNumber} not found in your Twilio account.",
+                    ], 400);
+                }
+
+                $incomingNumber = $incomingNumbers[0];
+
+                Log::info('Phone number found in user account', [
+                    'phone_number' => $phoneNumber,
+                    'sid' => $incomingNumber->sid,
+                ]);
+            } catch (TwilioException $e) {
+                Log::error('Failed to lookup phone number', [
+                    'store_name' => $storeName,
+                    'phone_number' => $phoneNumber,
+                    'error' => $e->getMessage(),
+                ]);
+
                 return response()->json([
                     'success' => false,
-                    'error' => "Phone number {$phoneNumber} not found in your Twilio account.",
-                ], 400);
+                    'error' => 'Failed to lookup phone number: ' . $e->getMessage(),
+                ], 500);
             }
 
-            $incomingNumber = $incomingNumbers[0];
+            // Step 3: Auto-wire webhook URL to point to our Cloud Run endpoint
+            try {
+                $userTwilio->incomingPhoneNumbers($incomingNumber->sid)->update([
+                    'smsUrl' => $webhookUrl,
+                    'smsMethod' => 'POST',
+                    'voiceUrl' => $webhookUrl,
+                    'voiceMethod' => 'POST',
+                ]);
 
-            Log::info('Phone number found in user account', [
-                'phone_number' => $phoneNumber,
-                'sid' => $incomingNumber->sid,
-            ]);
-        } catch (TwilioException $e) {
-            Log::error('Failed to lookup phone number', [
-                'store_name' => $storeName,
-                'phone_number' => $phoneNumber,
-                'error' => $e->getMessage(),
-            ]);
+                Log::info('Webhook configured on user number', [
+                    'phone_number' => $phoneNumber,
+                    'webhook_url' => $webhookUrl,
+                ]);
+            } catch (TwilioException $e) {
+                Log::error('Failed to configure webhook', [
+                    'store_name' => $storeName,
+                    'phone_number' => $phoneNumber,
+                    'error' => $e->getMessage(),
+                ]);
 
-            return response()->json([
-                'success' => false,
-                'error' => 'Failed to lookup phone number: ' . $e->getMessage(),
-            ], 500);
-        }
-
-        // Step 3: Auto-wire webhook URL to point to our Cloud Run endpoint
-        try {
-            $webhookUrl = config('services.twilio.whatsapp_webhook_url');
-
-            $userTwilio->incomingPhoneNumbers($incomingNumber->sid)->update([
-                'smsUrl' => $webhookUrl,
-                'smsMethod' => 'POST',
-                'voiceUrl' => $webhookUrl,
-                'voiceMethod' => 'POST',
-            ]);
-
-            Log::info('Webhook configured on user number', [
-                'phone_number' => $phoneNumber,
-                'webhook_url' => $webhookUrl,
-            ]);
-        } catch (TwilioException $e) {
-            Log::error('Failed to configure webhook', [
-                'store_name' => $storeName,
-                'phone_number' => $phoneNumber,
-                'error' => $e->getMessage(),
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'error' => 'Failed to configure webhook on your number: ' . $e->getMessage(),
-            ], 500);
+                return response()->json([
+                    'success' => false,
+                    'error' => 'Failed to configure webhook on your number: ' . $e->getMessage(),
+                ], 500);
+            }
         }
 
         // Step 4: Save/update store config with encrypted credentials
@@ -443,6 +454,7 @@ class WhatsAppProvisioningController extends Controller
                     'twilio_token' => $token, // Will be encrypted via model accessor
                     'twilio_phone_number' => $phoneNumber,
                     'is_active' => true,
+                    'is_sandbox' => $isSandbox,
                 ]
             );
 
@@ -450,16 +462,20 @@ class WhatsAppProvisioningController extends Controller
                 'store_name' => $storeName,
                 'phone_number' => $phoneNumber,
                 'config_id' => $storeConfig->id,
+                'is_sandbox' => $isSandbox,
             ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Twilio account connected successfully',
+                'message' => $isSandbox
+                    ? 'Twilio Sandbox connected successfully. Remember to set the webhook URL in Twilio Console.'
+                    : 'Twilio account connected successfully',
                 'data' => [
                     'store_name' => $storeName,
                     'phone_number' => $phoneNumber,
                     'webhook_url' => $webhookUrl,
                     'is_active' => true,
+                    'is_sandbox' => $isSandbox,
                 ],
             ]);
         } catch (\Exception $e) {
