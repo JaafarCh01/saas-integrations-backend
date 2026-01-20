@@ -67,7 +67,9 @@ return [
             'bucket' => env('GOOGLE_CLOUD_STORAGE_BUCKET'),
             'path_prefix' => '',
             'storage_api_uri' => null,
-            'visibility' => 'public',
+            // Use uniform bucket-level access handler to prevent legacy ACL errors
+            'visibility_handler' => \League\Flysystem\GoogleCloudStorage\UniformBucketLevelAccessVisibility::class,
+            'throw' => true,
         ],
 
     ],

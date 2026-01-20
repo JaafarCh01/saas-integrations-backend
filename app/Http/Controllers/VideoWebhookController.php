@@ -55,7 +55,37 @@ class VideoWebhookController extends Controller
 
                 $videoContent = $response->body();
                 $filename = "videos/{$jobId}.mp4";
-                Storage::put($filename, $videoContent, 'public');
+
+                Log::info("Attempting to store video", [
+                    'filename' => $filename,
+                    'disk' => config('filesystems.default'),
+                    'bucket' => config('filesystems.disks.gcs.bucket'),
+                    'content_length' => strlen($videoContent),
+                ]);
+
+                // Don't use 'public' visibility - bucket uses uniform bucket-level access
+                try {
+                    $stored = Storage::put($filename, $videoContent);
+                    Log::info("Storage::put returned", ['stored' => $stored]);
+                } catch (\Exception $storageError) {
+                    // Get the root cause - Flysystem wraps the real error
+                    $previousError = $storageError->getPrevious();
+                    Log::error("Storage::put threw exception", [
+                        'error' => $storageError->getMessage(),
+                        'previous_error' => $previousError ? $previousError->getMessage() : 'none',
+                        'previous_class' => $previousError ? get_class($previousError) : 'none',
+                        'trace' => $storageError->getTraceAsString(),
+                    ]);
+                    throw $storageError;
+                }
+
+                // Verify the file was actually written
+                $exists = Storage::exists($filename);
+                Log::info("Storage::exists check", ['exists' => $exists]);
+
+                if (!$stored || !$exists) {
+                    throw new \Exception("Failed to write video to storage. stored={$stored}, exists={$exists}");
+                }
 
                 $job->update([
                     'status' => 'completed',

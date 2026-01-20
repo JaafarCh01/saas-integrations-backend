@@ -80,6 +80,13 @@ Route::middleware('api')->group(function () {
         Route::post('/{id}/approve', [\App\Http\Controllers\EmailAgentController::class, 'approveDraft']);
     });
 
+    Route::get('/debug-config', function () {
+    return [
+        'disk_from_config' => config('filesystems.default'),
+        'bucket_from_config' => config('filesystems.disks.gcs.bucket'),
+        'env_disk_value' => env('FILESYSTEM_DISK'),
+    ];
+});
     // 8. Cron/Scheduler Triggers (for Cloud Run)
     // Called by Google Cloud Scheduler via HTTP
     Route::prefix('cron')->group(function () {
