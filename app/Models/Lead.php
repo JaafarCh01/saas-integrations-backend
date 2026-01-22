@@ -8,6 +8,7 @@ class Lead extends Model
 {
     protected $fillable = [
         'store_name',
+        'agent_id',
         'platform',
         'external_id',
         'username',
@@ -24,6 +25,14 @@ class Lead extends Model
         'quality_score' => 'integer',
         'action_taken_at' => 'datetime',
     ];
+
+    /**
+     * Get the agent that found this lead
+     */
+    public function agent()
+    {
+        return $this->belongsTo(Agent::class);
+    }
 
     /**
      * Scope: Get pending leads

@@ -9,6 +9,7 @@ use App\Http\Controllers\WhatsAppProvisioningController;
 use App\Http\Controllers\InstagramController;
 use App\Http\Controllers\UnipileWebhookController;
 use App\Http\Controllers\LeadController;
+use App\Http\Controllers\AgentController;
 
 Route::middleware('api')->group(function () {
     // 1. Product Mock (Simulating Client SaaS)
@@ -81,12 +82,12 @@ Route::middleware('api')->group(function () {
     });
 
     Route::get('/debug-config', function () {
-    return [
-        'disk_from_config' => config('filesystems.default'),
-        'bucket_from_config' => config('filesystems.disks.gcs.bucket'),
-        'env_disk_value' => env('FILESYSTEM_DISK'),
-    ];
-});
+        return [
+            'disk_from_config' => config('filesystems.default'),
+            'bucket_from_config' => config('filesystems.disks.gcs.bucket'),
+            'env_disk_value' => env('FILESYSTEM_DISK'),
+        ];
+    });
     // 8. Cron/Scheduler Triggers (for Cloud Run)
     // Called by Google Cloud Scheduler via HTTP
     Route::prefix('cron')->group(function () {
@@ -119,8 +120,23 @@ Route::middleware('api')->group(function () {
         Route::post('/save', [LeadController::class, 'saveConfig']);
     });
 
-    // 11. n8n Agent Discovery
+    // 11. n8n Agent Discovery (legacy, for backward compatibility)
     Route::get('/agents/active', [LeadController::class, 'activeAgents']);
+
+    // 12. AI Prospecting Agent Management API
+    Route::prefix('agents')->group(function () {
+        Route::get('/', [AgentController::class, 'index']);
+        Route::post('/', [AgentController::class, 'store']);
+        Route::get('/{id}', [AgentController::class, 'show']);
+        Route::put('/{id}', [AgentController::class, 'update']);
+        Route::delete('/{id}', [AgentController::class, 'destroy']);
+        Route::post('/{id}/run', [AgentController::class, 'run']);
+        Route::post('/{id}/toggle', [AgentController::class, 'toggle']);
+    });
+
+    // 13. Agent Completion Webhook (called by n8n)
+    Route::post('/webhooks/agent-completed', [AgentController::class, 'handleCompletion'])
+        ->name('webhooks.agent-completed');
 });
 
 Route::get('/user', function (Request $request) {

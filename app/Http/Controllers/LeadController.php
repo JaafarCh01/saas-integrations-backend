@@ -19,7 +19,8 @@ class LeadController extends Controller
     {
         $validated = $request->validate([
             'store_name' => 'required|string',
-            'platform' => ['required', Rule::in(['instagram', 'twitter', 'tiktok'])],
+            'agent_id' => 'nullable|exists:agents,id',
+            'platform' => ['required', Rule::in(['instagram', 'twitter', 'tiktok', 'linkedin'])],
             'external_id' => 'required|string',
             'username' => 'required|string',
             'profile_url' => 'required|url',
@@ -42,6 +43,7 @@ class LeadController extends Controller
                     'context' => $validated['context'] ?? null,
                     'quality_score' => $validated['quality_score'] ?? 0,
                     'draft_message' => $validated['draft_message'] ?? null,
+                    'agent_id' => $validated['agent_id'] ?? null,
                 ]
             );
 
