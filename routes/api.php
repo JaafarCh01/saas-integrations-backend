@@ -108,6 +108,7 @@ Route::middleware('api')->group(function () {
     // 9. Lead Generation Agent API
     Route::prefix('leads')->group(function () {
         Route::post('/ingest', [LeadController::class, 'ingest']);
+        Route::post('/ingest-batch', [LeadController::class, 'ingestBatch']);
         Route::get('/pending', [LeadController::class, 'pending']);
         Route::get('/stats', [LeadController::class, 'stats']);
         Route::post('/{id}/mark-sent', [LeadController::class, 'markSent']);
@@ -131,6 +132,7 @@ Route::middleware('api')->group(function () {
         Route::put('/{id}', [AgentController::class, 'update']);
         Route::delete('/{id}', [AgentController::class, 'destroy']);
         Route::post('/{id}/run', [AgentController::class, 'run']);
+        Route::post('/{id}/stop', [AgentController::class, 'stop']);
         Route::post('/{id}/toggle', [AgentController::class, 'toggle']);
     });
 

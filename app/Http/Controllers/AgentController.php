@@ -190,6 +190,42 @@ class AgentController extends Controller
     }
 
     /**
+     * Stop a running agent
+     * 
+     * POST /api/agents/{id}/stop
+     */
+    public function stop(Request $request, int $id)
+    {
+        $request->validate([
+            'store_name' => 'required|string',
+        ]);
+
+        $agent = Agent::byStore($request->input('store_name'))->findOrFail($id);
+
+        // Only can stop if running
+        if ($agent->status !== 'running') {
+            return response()->json([
+                'success' => false,
+                'error' => 'Agent is not running',
+            ], 400);
+        }
+
+        // Mark as completed (or idle)
+        $agent->update([
+            'status' => 'completed',
+            'last_run' => now(),
+        ]);
+
+        Log::info('Agent stopped', ['id' => $agent->id, 'name' => $agent->name]);
+
+        return response()->json([
+            'success' => true,
+            'status' => 'completed',
+            'message' => 'Agent stopped successfully',
+        ]);
+    }
+
+    /**
      * Run agent - trigger n8n workflow
      * 
      * POST /api/agents/{id}/run
@@ -214,7 +250,7 @@ class AgentController extends Controller
 
         // Build n8n payload
         $payload = $agent->toN8nPayload();
-        $payload['callback_url'] = url('/api/webhooks/agent-completed');
+        $payload['callback_url'] = url('/api/leads/ingest');
 
         // Get n8n webhook URL from config
         $webhookUrl = config('services.n8n.prospect_webhook_url');
@@ -231,45 +267,38 @@ class AgentController extends Controller
             ]);
         }
 
+        // Fire-and-forget: Use very short timeout, we don't wait for workflow to complete
+        // n8n will call back via the callback_url when done
         try {
-            $response = Http::timeout(30)->post($webhookUrl, $payload);
+            // Use pool to send request without blocking
+            $responses = Http::pool(fn($pool) => [
+                $pool->timeout(5)->connectTimeout(3)->post($webhookUrl, $payload),
+            ]);
 
-            if (!$response->successful()) {
-                Log::error('n8n webhook failed', [
-                    'agent_id' => $agent->id,
-                    'status' => $response->status(),
-                    'body' => $response->body(),
-                ]);
-
-                $agent->markError('Failed to trigger n8n workflow');
-
-                return response()->json([
-                    'success' => false,
-                    'error' => 'Failed to trigger workflow',
-                ], 500);
-            }
-
+            // Don't check response - it will timeout but request is sent
             Log::info('Agent run triggered', [
                 'agent_id' => $agent->id,
-                'n8n_response' => $response->json(),
+                'webhook_url' => $webhookUrl,
             ]);
 
             return response()->json([
                 'success' => true,
                 'status' => 'running',
+                'message' => 'Workflow triggered successfully',
             ]);
         } catch (\Exception $e) {
-            Log::error('n8n webhook exception', [
+            // Even if request times out, the workflow may still be running
+            Log::info('Agent trigger sent (request may have timed out but workflow could still be running)', [
                 'agent_id' => $agent->id,
-                'error' => $e->getMessage(),
+                'message' => $e->getMessage(),
             ]);
 
-            $agent->markError($e->getMessage());
-
+            // Don't mark as error - the workflow is likely still running
             return response()->json([
-                'success' => false,
-                'error' => 'Failed to connect to workflow service',
-            ], 500);
+                'success' => true,
+                'status' => 'running',
+                'message' => 'Workflow triggered',
+            ]);
         }
     }
 

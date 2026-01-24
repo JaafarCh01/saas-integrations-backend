@@ -20,7 +20,7 @@ class LeadController extends Controller
         $validated = $request->validate([
             'store_name' => 'required|string',
             'agent_id' => 'nullable|exists:agents,id',
-            'platform' => ['required', Rule::in(['instagram', 'twitter', 'tiktok', 'linkedin'])],
+            'platform' => ['required', Rule::in(['instagram', 'twitter', 'tiktok', 'linkedin', 'reddit'])],
             'external_id' => 'required|string',
             'username' => 'required|string',
             'profile_url' => 'required|url',
@@ -47,6 +47,21 @@ class LeadController extends Controller
                 ]
             );
 
+            // Update agent prospect count and mark as completed if this is a new lead
+            if ($lead->wasRecentlyCreated && !empty($validated['agent_id'])) {
+                $agent = \App\Models\Agent::find($validated['agent_id']);
+                if ($agent) {
+                    $agent->increment('prospect_count');
+                    // Mark completed after a short delay (will be handled by polling)
+                    if ($agent->status === 'running') {
+                        $agent->update([
+                            'status' => 'completed',
+                            'last_run' => now(),
+                        ]);
+                    }
+                }
+            }
+
             Log::info('Lead ingested', [
                 'id' => $lead->id,
                 'platform' => $lead->platform,
@@ -69,6 +84,78 @@ class LeadController extends Controller
     }
 
     /**
+     * Ingest batch of leads from n8n workflow
+     * 
+     * POST /api/leads/ingest-batch
+     */
+public function ingestBatch(Request $request)
+{
+    // 1. Validation (Same as before)
+    $validated = $request->validate([
+        'store_name' => 'required|string',
+        'agent_id' => 'required|exists:agents,id',
+        'leads' => 'required|array|min:1',
+        'leads.*.platform' => ['required', \Illuminate\Validation\Rule::in(['instagram', 'twitter', 'tiktok', 'linkedin', 'reddit'])],
+        'leads.*.external_id' => 'required|string',
+        'leads.*.username' => 'required|string',
+        'leads.*.profile_url' => 'required|string',
+        'leads.*.context' => 'nullable|array',
+        'leads.*.follower_count' => 'nullable|integer',
+        'leads.*.is_verified' => 'nullable|boolean',
+    ]);
+
+    $storeName = $validated['store_name'];
+    $agentId = $validated['agent_id'];
+    $leads = $validated['leads'];
+    $now = now();
+
+    // 2. Prepare data for Bulk Insert
+    $upsertData = [];
+    foreach ($leads as $lead) {
+        $upsertData[] = [
+            'store_name' => $storeName,
+            'platform' => $lead['platform'],
+            'external_id' => $lead['external_id'],
+            'username' => $lead['username'],
+            'profile_url' => $lead['profile_url'],
+            'context' => isset($lead['context']) ? json_encode($lead['context']) : null, // Ensure JSON is stringified
+            'quality_score' => $lead['quality_score'] ?? 0,
+            'agent_id' => $agentId,
+            'created_at' => $now,
+            'updated_at' => $now,
+            // Map other fields if your DB has them (follower_count, is_verified, etc)
+        ];
+    }
+
+    try {
+        // 3. THE MAGIC: UPSERT (1 Query instead of 100)
+        // This tries to insert all 100. If (store_name, platform, external_id) exists, it UPDATES them instead.
+        // No race conditions. No deadlocks. Blazing fast.
+        
+        $affectedRows = Lead::upsert(
+            $upsertData, 
+            ['store_name', 'platform', 'external_id'], // Unique Keys to check
+            ['username', 'profile_url', 'context', 'updated_at'] // Columns to update if found
+        );
+
+        // Update agent stats (Approximate count based on affected rows)
+        if ($affectedRows > 0) {
+            \App\Models\Agent::where('id', $agentId)->increment('prospect_count', count($upsertData));
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Batch processed successfully',
+            'count' => count($upsertData)
+        ]);
+
+    } catch (\Exception $e) {
+        Log::error('Batch ingest error', ['error' => $e->getMessage()]);
+        return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+    }
+}
+
+    /**
      * Get pending leads for dashboard
      * 
      * GET /api/leads/pending
@@ -77,8 +164,9 @@ class LeadController extends Controller
     {
         $request->validate([
             'store_name' => 'required|string',
-            'platform' => ['nullable', Rule::in(['instagram', 'twitter', 'tiktok'])],
+            'platform' => ['nullable', Rule::in(['instagram', 'twitter', 'tiktok', 'linkedin', 'reddit'])],
             'min_score' => 'nullable|integer|min:0|max:100',
+            'agent_id' => 'nullable|integer',
         ]);
 
         $storeName = $request->query('store_name');
