@@ -88,36 +88,46 @@ class LeadController extends Controller
      * 
      * POST /api/leads/ingest-batch
      */
-public function ingestBatch(Request $request)
+    public function ingestBatch(Request $request)
     {
-        // 1. Validation (Same as before)
-        $validated = $request->validate([
+        // 1. Basic validation for required fields
+        $request->validate([
             'store_name' => 'required|string',
             'agent_id' => 'required|exists:agents,id',
             'leads' => 'required|array|min:1',
-            'leads.*.platform' => ['required', \Illuminate\Validation\Rule::in(['instagram', 'twitter', 'tiktok', 'linkedin', 'reddit'])],
-            'leads.*.external_id' => 'required|string',
-            'leads.*.username' => 'required|string',
-            'leads.*.profile_url' => 'required|string',
-            'leads.*.context' => 'nullable|array',
-            'leads.*.follower_count' => 'nullable|integer',
-            'leads.*.is_verified' => 'nullable|boolean',
         ]);
 
-        $storeName = $validated['store_name'];
-        $agentId = $validated['agent_id'];
-        $leads = $validated['leads'];
+        $storeName = $request->input('store_name');
+        $agentId = $request->input('agent_id');
+        $rawLeads = $request->input('leads');
         $now = now();
 
-        // 2. Prepare data
+        // 2. Valid platforms list
+        $validPlatforms = ['instagram', 'twitter', 'tiktok', 'linkedin', 'reddit'];
+
+        // 3. Filter and prepare only valid leads (skip malformed ones)
         $upsertData = [];
-        foreach ($leads as $lead) {
+        $skippedCount = 0;
+
+        foreach ($rawLeads as $lead) {
+            // Skip if required fields are missing or invalid
+            if (
+                empty($lead['platform']) ||
+                !in_array($lead['platform'], $validPlatforms) ||
+                empty($lead['external_id']) ||
+                empty($lead['username']) ||
+                empty($lead['profile_url'])
+            ) {
+                $skippedCount++;
+                continue;
+            }
+
             $upsertData[] = [
                 'store_name' => $storeName,
                 'platform' => $lead['platform'],
-                'external_id' => $lead['external_id'],
-                'username' => $lead['username'],
-                'profile_url' => $lead['profile_url'],
+                'external_id' => (string) $lead['external_id'],
+                'username' => (string) $lead['username'],
+                'profile_url' => (string) $lead['profile_url'],
                 'context' => isset($lead['context']) ? json_encode($lead['context']) : null,
                 'quality_score' => $lead['quality_score'] ?? 0,
                 'agent_id' => $agentId,
@@ -126,18 +136,27 @@ public function ingestBatch(Request $request)
             ];
         }
 
+        // If no valid leads after filtering, return early
+        if (empty($upsertData)) {
+            return response()->json([
+                'success' => true,
+                'message' => 'No valid leads to insert',
+                'count' => 0,
+                'skipped' => $skippedCount
+            ]);
+        }
+
         try {
-            // 3. THE FIX: Wrap UPSERT in a Transaction with Retries
-            // The '3' as the second argument tells Laravel to auto-retry 3 times on Deadlock
-            return \DB::transaction(function () use ($upsertData, $agentId, $storeName) {
-                
+            // 4. UPSERT with transaction and retry on deadlock
+            return \DB::transaction(function () use ($upsertData, $agentId, $skippedCount) {
+
                 $affectedRows = \App\Models\Lead::upsert(
-                    $upsertData, 
-                    ['store_name', 'platform', 'external_id'], 
-                    ['username', 'profile_url', 'context', 'updated_at'] 
+                    $upsertData,
+                    ['store_name', 'platform', 'external_id'],
+                    ['username', 'profile_url', 'context', 'updated_at']
                 );
 
-                // Update Stats (using the correct "Real Count" logic from before)
+                // Update Stats with real count from DB
                 if ($affectedRows > 0) {
                     $realCount = \App\Models\Lead::where('agent_id', $agentId)->count();
                     \App\Models\Agent::where('id', $agentId)->update(['prospect_count' => $realCount]);
@@ -146,10 +165,11 @@ public function ingestBatch(Request $request)
                 return response()->json([
                     'success' => true,
                     'message' => 'Batch processed successfully',
-                    'count' => count($upsertData)
+                    'count' => count($upsertData),
+                    'skipped' => $skippedCount
                 ]);
 
-            }, 3); // <--- RETRY 3 TIMES ON DEADLOCK
+            }, 3); // RETRY 3 TIMES ON DEADLOCK
 
         } catch (\Exception $e) {
             Log::error('Batch ingest error', ['error' => $e->getMessage()]);
