@@ -89,71 +89,73 @@ class LeadController extends Controller
      * POST /api/leads/ingest-batch
      */
 public function ingestBatch(Request $request)
-{
-    // 1. Validation (Same as before)
-    $validated = $request->validate([
-        'store_name' => 'required|string',
-        'agent_id' => 'required|exists:agents,id',
-        'leads' => 'required|array|min:1',
-        'leads.*.platform' => ['required', \Illuminate\Validation\Rule::in(['instagram', 'twitter', 'tiktok', 'linkedin', 'reddit'])],
-        'leads.*.external_id' => 'required|string',
-        'leads.*.username' => 'required|string',
-        'leads.*.profile_url' => 'required|string',
-        'leads.*.context' => 'nullable|array',
-        'leads.*.follower_count' => 'nullable|integer',
-        'leads.*.is_verified' => 'nullable|boolean',
-    ]);
-
-    $storeName = $validated['store_name'];
-    $agentId = $validated['agent_id'];
-    $leads = $validated['leads'];
-    $now = now();
-
-    // 2. Prepare data for Bulk Insert
-    $upsertData = [];
-    foreach ($leads as $lead) {
-        $upsertData[] = [
-            'store_name' => $storeName,
-            'platform' => $lead['platform'],
-            'external_id' => $lead['external_id'],
-            'username' => $lead['username'],
-            'profile_url' => $lead['profile_url'],
-            'context' => isset($lead['context']) ? json_encode($lead['context']) : null, // Ensure JSON is stringified
-            'quality_score' => $lead['quality_score'] ?? 0,
-            'agent_id' => $agentId,
-            'created_at' => $now,
-            'updated_at' => $now,
-            // Map other fields if your DB has them (follower_count, is_verified, etc)
-        ];
-    }
-
-    try {
-        // 3. THE MAGIC: UPSERT (1 Query instead of 100)
-        // This tries to insert all 100. If (store_name, platform, external_id) exists, it UPDATES them instead.
-        // No race conditions. No deadlocks. Blazing fast.
-        
-        $affectedRows = Lead::upsert(
-            $upsertData, 
-            ['store_name', 'platform', 'external_id'], // Unique Keys to check
-            ['username', 'profile_url', 'context', 'updated_at'] // Columns to update if found
-        );
-
-        // Update agent stats (Approximate count based on affected rows)
-        if ($affectedRows > 0) {
-            \App\Models\Agent::where('id', $agentId)->increment('prospect_count', count($upsertData));
-        }
-
-        return response()->json([
-            'success' => true,
-            'message' => 'Batch processed successfully',
-            'count' => count($upsertData)
+    {
+        // 1. Validation (Same as before)
+        $validated = $request->validate([
+            'store_name' => 'required|string',
+            'agent_id' => 'required|exists:agents,id',
+            'leads' => 'required|array|min:1',
+            'leads.*.platform' => ['required', \Illuminate\Validation\Rule::in(['instagram', 'twitter', 'tiktok', 'linkedin', 'reddit'])],
+            'leads.*.external_id' => 'required|string',
+            'leads.*.username' => 'required|string',
+            'leads.*.profile_url' => 'required|string',
+            'leads.*.context' => 'nullable|array',
+            'leads.*.follower_count' => 'nullable|integer',
+            'leads.*.is_verified' => 'nullable|boolean',
         ]);
 
-    } catch (\Exception $e) {
-        Log::error('Batch ingest error', ['error' => $e->getMessage()]);
-        return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        $storeName = $validated['store_name'];
+        $agentId = $validated['agent_id'];
+        $leads = $validated['leads'];
+        $now = now();
+
+        // 2. Prepare data
+        $upsertData = [];
+        foreach ($leads as $lead) {
+            $upsertData[] = [
+                'store_name' => $storeName,
+                'platform' => $lead['platform'],
+                'external_id' => $lead['external_id'],
+                'username' => $lead['username'],
+                'profile_url' => $lead['profile_url'],
+                'context' => isset($lead['context']) ? json_encode($lead['context']) : null,
+                'quality_score' => $lead['quality_score'] ?? 0,
+                'agent_id' => $agentId,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        try {
+            // 3. THE FIX: Wrap UPSERT in a Transaction with Retries
+            // The '3' as the second argument tells Laravel to auto-retry 3 times on Deadlock
+            return \DB::transaction(function () use ($upsertData, $agentId, $storeName) {
+                
+                $affectedRows = \App\Models\Lead::upsert(
+                    $upsertData, 
+                    ['store_name', 'platform', 'external_id'], 
+                    ['username', 'profile_url', 'context', 'updated_at'] 
+                );
+
+                // Update Stats (using the correct "Real Count" logic from before)
+                if ($affectedRows > 0) {
+                    $realCount = \App\Models\Lead::where('agent_id', $agentId)->count();
+                    \App\Models\Agent::where('id', $agentId)->update(['prospect_count' => $realCount]);
+                }
+
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Batch processed successfully',
+                    'count' => count($upsertData)
+                ]);
+
+            }, 3); // <--- RETRY 3 TIMES ON DEADLOCK
+
+        } catch (\Exception $e) {
+            Log::error('Batch ingest error', ['error' => $e->getMessage()]);
+            return response()->json(['success' => false, 'error' => $e->getMessage()], 500);
+        }
     }
-}
 
     /**
      * Get pending leads for dashboard

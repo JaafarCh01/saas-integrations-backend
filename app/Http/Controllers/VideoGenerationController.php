@@ -56,6 +56,8 @@ class VideoGenerationController extends Controller
                 'product_description' => 'nullable',
                 'product_image_url' => 'required|url',
                 'custom_prompt' => 'nullable|string|max:1000',
+                'duration' => 'nullable|integer|in:5,6,7,8',
+                'language' => 'nullable|string|in:en,fr,es,de,it,pt,ar',
             ]);
 
             Log::info('Debug DB Config', [
@@ -92,6 +94,8 @@ class VideoGenerationController extends Controller
                             ['name' => 'product_name', 'contents' => $validated['product_name']],
                             ['name' => 'product_description', 'contents' => $validated['product_description'] ?? ''],
                             ['name' => 'custom_prompt', 'contents' => $validated['custom_prompt'] ?? ''],
+                            ['name' => 'duration', 'contents' => (string) ($validated['duration'] ?? 8)],
+                            ['name' => 'language', 'contents' => $validated['language'] ?? 'en'],
                             // Send as both 'data' AND 'product_image_url' to match n8n workflow
                             ['name' => 'data', 'contents' => $validated['product_image_url']],
                             ['name' => 'product_image_url', 'contents' => $validated['product_image_url']],
