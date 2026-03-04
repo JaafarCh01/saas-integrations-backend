@@ -131,6 +131,7 @@ class WhatsAppStoreConfig extends Model
 
         return self::where('twilio_phone_number', $normalizedPhone)
             ->where('is_active', true)
+            ->latest('updated_at')
             ->first();
     }
 

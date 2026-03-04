@@ -15,6 +15,8 @@ class InstagramConfig extends Model
         'ai_system_prompt',
         'api_token',
         'is_active',
+        'type_website',
+        'store_description',
     ];
 
     protected $casts = [

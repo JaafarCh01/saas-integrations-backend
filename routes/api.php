@@ -22,6 +22,7 @@ Route::middleware('api')->group(function () {
     Route::get('/ugc/video/{jobId}', [VideoGenerationController::class, 'proxyVideo'])->name('video.proxy');
     Route::delete('/ugc/video/{jobId}', [VideoGenerationController::class, 'destroy']);
     Route::get('/ugc/history', [VideoGenerationController::class, 'history']);
+    Route::post('/ugc/upload-image', [VideoGenerationController::class, 'uploadImage']);
 
     // 3. Webhooks (n8n callbacks & external services)
     Route::post('/webhooks/video-completed', [VideoWebhookController::class, 'handle']);

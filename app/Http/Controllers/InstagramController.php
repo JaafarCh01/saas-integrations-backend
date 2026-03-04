@@ -43,6 +43,27 @@ class InstagramController extends Controller
                 $config->save();
             }
 
+            // Fetch and store user info (type_website, description) while we have the token
+            if ($apiToken) {
+                try {
+                    $userResponse = Http::withToken($apiToken)
+                        ->timeout(10)
+                        ->get("https://{$storeName}.devaito.com/api/v1/ai-agent/user");
+
+                    if ($userResponse->successful()) {
+                        $userData = $userResponse->json('data');
+                        $config->type_website = $userData['type_website'] ?? null;
+                        $config->store_description = $userData['description'] ?? null;
+                        $config->save();
+                    }
+                } catch (\Exception $e) {
+                    Log::warning('Failed to fetch user info during Instagram connect', [
+                        'store_name' => $storeName,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
             // Generate expiration time (1 hour from now) in strict UTC format with milliseconds
             // Unipile requires: YYYY-MM-DDTHH:MM:SS.sssZ
             $expiresOn = Carbon::now()->addHour()->utc()->format('Y-m-d\TH:i:s.v\Z');

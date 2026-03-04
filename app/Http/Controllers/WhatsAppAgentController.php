@@ -136,13 +136,33 @@ class WhatsAppAgentController extends Controller
             $storeInfo = null;
             $products = [];
 
-            // Try api_token first, otherwise call Devaito API directly using store_name
+            // Try WhatsApp config api_token first
             if ($storeConfig && $storeConfig->api_token) {
                 $storeInfo = $this->fetchStoreInfo($storeConfig);
                 $products = $this->fetchProducts($storeConfig);
             } else {
-                // Fallback: fetch products directly using store_name (no auth needed)
-                $products = $this->fetchProductsByStoreName($storeName);
+                // Try Instagram config api_token
+                $instagramConfig = InstagramConfig::findByStoreName($storeName);
+                if ($instagramConfig && $instagramConfig->api_token) {
+                    $storeInfo = $this->fetchStoreInfoFromInstagram($instagramConfig);
+                    $products = $this->fetchProductsFromInstagram($instagramConfig);
+                } else {
+                    // Fallback: fetch store info and products directly using store_name
+                    $storeInfo = $this->fetchStoreInfoByStoreName($storeName);
+                    $products = $this->fetchProductsByStoreName($storeName);
+                }
+            }
+
+            // If storeInfo is still null, use locally stored fields from InstagramConfig
+            if (!$storeInfo) {
+                $instagramConfig = $instagramConfig ?? InstagramConfig::findByStoreName($storeName);
+                if ($instagramConfig && $instagramConfig->type_website) {
+                    $storeInfo = [
+                        'type_website' => $instagramConfig->type_website,
+                        'description' => $instagramConfig->store_description,
+                        'name' => $instagramConfig->store_name,
+                    ];
+                }
             }
 
             // Fetch last 5 messages for conversation history
@@ -201,14 +221,18 @@ class WhatsAppAgentController extends Controller
     public function stats(string $storeName)
     {
         try {
+            // Only show WhatsApp conversations (conversation_id format: {storeName}_{phone})
+            $whatsappOnly = fn($q) => $q->where('store_name', $storeName)
+                ->where('conversation_id', 'LIKE', "{$storeName}_%");
+
             // Total messages count
-            $totalMessages = AgentLog::forStore($storeName)->count();
+            $totalMessages = AgentLog::where($whatsappOnly)->count();
 
             // Total spend
-            $totalSpend = AgentLog::forStore($storeName)->sum('cost_estimate_usd');
+            $totalSpend = AgentLog::where($whatsappOnly)->sum('cost_estimate_usd');
 
             // Activity chart (last 7 days)
-            $activityChart = AgentLog::forStore($storeName)
+            $activityChart = AgentLog::where($whatsappOnly)
                 ->lastDays(7)
                 ->select(DB::raw('DATE(created_at) as date'), DB::raw('COUNT(*) as count'))
                 ->groupBy('date')
@@ -223,7 +247,7 @@ class WhatsAppAgentController extends Controller
             $activityChart = $this->fillMissingDates($activityChart, 7);
 
             // Recent conversations summary
-            $conversations = AgentLog::forStore($storeName)
+            $conversations = AgentLog::where($whatsappOnly)
                 ->select(
                     'conversation_id',
                     'customer_phone',
@@ -466,6 +490,30 @@ class WhatsAppAgentController extends Controller
     }
 
     /**
+     * Fetch store info from Devaito API using just the store name (no auth required)
+     */
+    private function fetchStoreInfoByStoreName(string $storeName): ?array
+    {
+        $cacheKey = "store_info_{$storeName}";
+
+        return Cache::remember($cacheKey, 300, function () use ($storeName) {
+            try {
+                $url = "https://{$storeName}.devaito.com/api/v1/ai-agent/user";
+                $response = Http::timeout(10)->get($url);
+
+                if ($response->successful()) {
+                    $data = $response->json();
+                    return $data['data'] ?? null;
+                }
+            } catch (\Exception $e) {
+                Log::error("Failed to fetch store info for {$storeName}: " . $e->getMessage());
+            }
+
+            return null;
+        });
+    }
+
+    /**
      * Fetch products from Devaito API using just the store name (no auth required)
      * Fallback when no api_token is available
      */
@@ -554,8 +602,30 @@ class WhatsAppAgentController extends Controller
     {
         $ownerName = $storeInfo['name'] ?? 'the store owner';
         $storeUrl = "https://{$storeName}.devaito.com";
+        $typeWebsite = $storeInfo['type_website'] ?? 'ecommerce';
+        $description = $storeInfo['description'] ?? null;
 
-        // Build product catalog section
+        if ($typeWebsite !== 'ecommerce') {
+            // Static website / service provider prompt
+            $serviceContext = "";
+            if ($description) {
+                $serviceContext = "\n\nAbout the business:\n{$description}\n";
+            }
+
+            return "You are a friendly and helpful assistant for {$storeName}. " .
+                "The business is run by {$ownerName}. Website: {$storeUrl}\n\n" .
+                "Your role is to:\n" .
+                "1. Help visitors understand the services offered\n" .
+                "2. Answer questions about what the business does, pricing, and availability\n" .
+                "3. Share the website link when relevant\n" .
+                "4. Be friendly, concise, and professional\n" .
+                "5. Keep responses under 300 characters when possible for readability\n" .
+                "6. If you don't know something, say so honestly and offer to help find the answer\n" .
+                "7. Always be courteous and thank visitors for their interest\n" .
+                $serviceContext;
+        }
+
+        // E-commerce prompt (existing behavior)
         $productCatalog = "";
         if (!empty($products)) {
             $productCatalog = "\n\nAvailable Products:\n";

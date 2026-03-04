@@ -201,7 +201,20 @@ class VideoGenerationController extends Controller
         }
     }
 
-    // 7. Generate AI Prompt for Video Description
+    // 7. Upload Image (for static website users)
+    public function uploadImage(Request $request)
+    {
+        $request->validate([
+            'image' => 'required|image|mimes:jpg,jpeg,png,webp|max:10240',
+        ]);
+
+        $path = $request->file('image')->store('ugc-uploads', 'gcs');
+        $url = 'https://storage.googleapis.com/' . config('filesystems.disks.gcs.bucket') . '/' . $path;
+
+        return response()->json(['url' => $url]);
+    }
+
+    // 8. Generate AI Prompt for Video Description
     public function generatePrompt(Request $request)
     {
         try {
