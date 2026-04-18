@@ -27,13 +27,20 @@ RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip imap
 
 # The php:8.2-apache-bullseye base image ships with BOTH mpm_event and
-# mpm_prefork enabled in mods-enabled/ — that's what caused the "More
-# than one MPM loaded" error. Disable event so only prefork survives
-# (mod_php requires prefork).
-RUN a2dismod mpm_event && a2enmod mpm_prefork && a2enmod rewrite
-
-# Sanity-check Apache config at build time — fail fast if broken
-RUN apache2ctl -t
+# mpm_prefork enabled in mods-enabled/. a2dismod sometimes returns 0
+# without actually removing symlinks on this image, so we rm the event
+# symlinks directly — guaranteed to work regardless of what a2dismod
+# thinks. (mod_php requires mpm_prefork.)
+RUN set -ex && \
+    rm -f /etc/apache2/mods-enabled/mpm_event.conf \
+          /etc/apache2/mods-enabled/mpm_event.load \
+          /etc/apache2/mods-enabled/mpm_worker.conf \
+          /etc/apache2/mods-enabled/mpm_worker.load && \
+    a2enmod mpm_prefork && \
+    a2enmod rewrite && \
+    echo "=== build-time mods-enabled (mpm entries only) ===" && \
+    ls -la /etc/apache2/mods-enabled/ | grep -i mpm && \
+    apache2ctl -t
 
 # Set working directory
 WORKDIR /var/www/html
@@ -69,5 +76,6 @@ ENV PORT=8080
 # Update Apache ports configuration to listen on PORT env var
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Run Apache in foreground
-CMD ["apache2-foreground"]
+# Run Apache in foreground, but verify mods-enabled one last time before
+# exec so we can confirm there's no between-build-and-runtime reset
+CMD ["sh", "-c", "echo '=== runtime mpm state ===' && ls -la /etc/apache2/mods-enabled/ | grep -i mpm ; echo '=== starting apache ===' ; exec apache2-foreground"]
