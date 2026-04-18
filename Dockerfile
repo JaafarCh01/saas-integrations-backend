@@ -27,19 +27,22 @@ RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip imap
 
 # The php:8.2-apache-bullseye base image ships with BOTH mpm_event and
-# mpm_prefork enabled in mods-enabled/. a2dismod sometimes returns 0
-# without actually removing symlinks on this image, so we rm the event
-# symlinks directly — guaranteed to work regardless of what a2dismod
-# thinks. (mod_php requires mpm_prefork.)
+# mpm_prefork symlinked in mods-enabled/. rm and a2dismod both appear
+# to fail silently in this environment (symlinks reappear at runtime).
+# Workaround: overwrite the SOURCE files in mods-available with empty
+# content — the symlinks still exist but now resolve to files that
+# contain no LoadModule directive, so Apache loads no event MPM.
 RUN set -ex && \
-    rm -f /etc/apache2/mods-enabled/mpm_event.conf \
-          /etc/apache2/mods-enabled/mpm_event.load \
-          /etc/apache2/mods-enabled/mpm_worker.conf \
-          /etc/apache2/mods-enabled/mpm_worker.load && \
+    echo "# disabled by dockerfile (mod_php needs mpm_prefork)" \
+        | tee /etc/apache2/mods-available/mpm_event.load \
+              /etc/apache2/mods-available/mpm_event.conf \
+              /etc/apache2/mods-available/mpm_worker.load \
+              /etc/apache2/mods-available/mpm_worker.conf \
+        > /dev/null && \
     a2enmod mpm_prefork && \
     a2enmod rewrite && \
-    echo "=== build-time mods-enabled (mpm entries only) ===" && \
-    ls -la /etc/apache2/mods-enabled/ | grep -i mpm && \
+    echo "=== mpm_event.load contents (should be comment only) ===" && \
+    cat /etc/apache2/mods-available/mpm_event.load && \
     apache2ctl -t
 
 # Set working directory
@@ -76,6 +79,7 @@ ENV PORT=8080
 # Update Apache ports configuration to listen on PORT env var
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Run Apache in foreground, but verify mods-enabled one last time before
-# exec so we can confirm there's no between-build-and-runtime reset
-CMD ["sh", "-c", "echo '=== runtime mpm state ===' && ls -la /etc/apache2/mods-enabled/ | grep -i mpm ; echo '=== starting apache ===' ; exec apache2-foreground"]
+# Run Apache in foreground, dumping the ACTUAL contents of mpm_event.load
+# at runtime so we can see whether it's empty (as built) or somehow
+# repopulated between image build and container start
+CMD ["sh", "-c", "echo '=== runtime mpm_event.load contents ===' && cat /etc/apache2/mods-available/mpm_event.load && echo '=== runtime mods-enabled mpm entries ===' && ls -la /etc/apache2/mods-enabled/ | grep -i mpm ; echo '=== starting apache ===' ; exec apache2-foreground"]
