@@ -26,9 +26,11 @@ RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl
 # Install PHP extensions (ADDED: imap)
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip imap
 
-# Enable Apache mod_rewrite (mpm_prefork is the default on bullseye,
-# no extra surgery needed)
-RUN a2enmod rewrite
+# The php:8.2-apache-bullseye base image ships with BOTH mpm_event and
+# mpm_prefork enabled in mods-enabled/ — that's what caused the "More
+# than one MPM loaded" error. Disable event so only prefork survives
+# (mod_php requires prefork).
+RUN a2dismod mpm_event && a2enmod mpm_prefork && a2enmod rewrite
 
 # Sanity-check Apache config at build time — fail fast if broken
 RUN apache2ctl -t
@@ -67,6 +69,5 @@ ENV PORT=8080
 # Update Apache ports configuration to listen on PORT env var
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Run Apache in foreground, dumping MPM state to logs first so we can
-# see what Apache actually sees at runtime (not build time)
-CMD ["sh", "-c", "echo '=== runtime mods-enabled ===' && ls -la /etc/apache2/mods-enabled/ && echo '=== runtime apache2ctl -M ===' && apache2ctl -M 2>&1 ; echo '=== starting apache ===' ; exec apache2-foreground"]
+# Run Apache in foreground
+CMD ["apache2-foreground"]
