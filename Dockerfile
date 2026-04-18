@@ -79,7 +79,7 @@ ENV PORT=8080
 # Update Apache ports configuration to listen on PORT env var
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Run Apache in foreground, dumping the ACTUAL contents of mpm_event.load
-# at runtime so we can see whether it's empty (as built) or somehow
-# repopulated between image build and container start
-CMD ["sh", "-c", "echo '=== runtime mpm_event.load contents ===' && cat /etc/apache2/mods-available/mpm_event.load && echo '=== runtime mods-enabled mpm entries ===' && ls -la /etc/apache2/mods-enabled/ | grep -i mpm ; echo '=== starting apache ===' ; exec apache2-foreground"]
+# Run migrations inside Railway's network (where mysql.railway.internal
+# resolves), then start Apache. If migrations fail, the deploy fails loudly
+# instead of serving a broken app.
+CMD ["sh", "-c", "php artisan migrate --force && exec apache2-foreground"]
