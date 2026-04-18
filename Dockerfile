@@ -24,8 +24,13 @@ RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl
 # Install PHP extensions (ADDED: imap)
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip imap
 
-# Enable Apache mod_rewrite
-RUN a2enmod rewrite
+# Enable Apache mod_rewrite and ensure only mpm_prefork is active
+# (mod_php requires mpm_prefork; bookworm leaves mpm_event enabled by default,
+# which causes "More than one MPM loaded" on boot)
+RUN a2enmod rewrite && \
+    (a2dismod mpm_event || true) && \
+    (a2dismod mpm_worker || true) && \
+    a2enmod mpm_prefork
 
 # Set working directory
 WORKDIR /var/www/html

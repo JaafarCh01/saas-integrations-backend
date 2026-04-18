@@ -59,7 +59,7 @@ class VideoWebhookController extends Controller
                 Log::info("Attempting to store video", [
                     'filename' => $filename,
                     'disk' => config('filesystems.default'),
-                    'bucket' => config('filesystems.disks.gcs.bucket'),
+                    'bucket' => config('filesystems.disks.s3.bucket'),
                     'content_length' => strlen($videoContent),
                 ]);
 

@@ -133,7 +133,7 @@ class VideoGenerationController extends Controller
         return response()->json([
             'job_id' => $job->job_id,
             'status' => $job->status,
-            'video_url' => $job->video_url ? 'https://storage.googleapis.com/' . config('filesystems.disks.gcs.bucket') . '/' . $job->video_url : null,
+            'video_url' => $job->video_url ? Storage::url($job->video_url) : null,
         ]);
     }
 
@@ -171,7 +171,7 @@ class VideoGenerationController extends Controller
                     'product_name' => $job->product_name,
                     'status' => $job->status,
                     'created_at' => $job->created_at,
-                    'video_url' => $job->video_url ? 'https://storage.googleapis.com/' . config('filesystems.disks.gcs.bucket') . '/' . $job->video_url : null,
+                    'video_url' => $job->video_url ? Storage::url($job->video_url) : null,
                 ];
             });
 
@@ -208,8 +208,8 @@ class VideoGenerationController extends Controller
             'image' => 'required|image|mimes:jpg,jpeg,png,webp|max:10240',
         ]);
 
-        $path = $request->file('image')->store('ugc-uploads', 'gcs');
-        $url = 'https://storage.googleapis.com/' . config('filesystems.disks.gcs.bucket') . '/' . $path;
+        $path = $request->file('image')->store('ugc-uploads');
+        $url = Storage::url($path);
 
         return response()->json(['url' => $url]);
     }
