@@ -28,16 +28,15 @@ RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip imap
 # (mod_php requires mpm_prefork; bookworm leaves other MPMs wired up which
 # causes "More than one MPM loaded" on boot — scrub every mpm symlink AND
 # comment out any stray `LoadModule mpm_...` line hiding in conf files)
-RUN set -e && \
-    rm -f /etc/apache2/mods-enabled/mpm_*.load \
-          /etc/apache2/mods-enabled/mpm_*.conf && \
-    find /etc/apache2 -type f \( -name "*.conf" -o -name "*.load" \) \
-        -exec sed -i -E '/^[[:space:]]*LoadModule[[:space:]]+mpm_(event|worker)_module/ s|^|# DISABLED-BY-DOCKERFILE: |' {} \; && \
+RUN set -ex && \
+    rm -f /etc/apache2/mods-enabled/mpm_event.* \
+          /etc/apache2/mods-enabled/mpm_worker.* \
+          /etc/apache2/mods-available/mpm_event.* \
+          /etc/apache2/mods-available/mpm_worker.* && \
     a2enmod mpm_prefork && \
     a2enmod rewrite && \
-    echo "=== final mods-enabled ===" && ls -la /etc/apache2/mods-enabled/ && \
-    echo "=== uncommented mpm LoadModule lines (should be exactly 1: prefork) ===" && \
-    grep -rnE "^[^#]*LoadModule[[:space:]]+mpm_" /etc/apache2/ || true
+    echo "=== final mods-enabled ===" && \
+    ls -la /etc/apache2/mods-enabled/
 
 # Set working directory
 WORKDIR /var/www/html
