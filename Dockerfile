@@ -32,12 +32,12 @@ RUN set -e && \
     rm -f /etc/apache2/mods-enabled/mpm_*.load \
           /etc/apache2/mods-enabled/mpm_*.conf && \
     find /etc/apache2 -type f \( -name "*.conf" -o -name "*.load" \) \
-        -exec sed -i -E '/^[[:space:]]*LoadModule[[:space:]]+mpm_/ s|^|# DISABLED-BY-DOCKERFILE: |' {} \; && \
+        -exec sed -i -E '/^[[:space:]]*LoadModule[[:space:]]+mpm_(event|worker)_module/ s|^|# DISABLED-BY-DOCKERFILE: |' {} \; && \
     a2enmod mpm_prefork && \
     a2enmod rewrite && \
     echo "=== final mods-enabled ===" && ls -la /etc/apache2/mods-enabled/ && \
-    echo "=== remaining uncommented mpm LoadModule lines ===" && \
-    (grep -rnE "^[^#]*LoadModule[[:space:]]+mpm_" /etc/apache2/ || echo "none — good")
+    echo "=== uncommented mpm LoadModule lines (should be exactly 1: prefork) ===" && \
+    grep -rnE "^[^#]*LoadModule[[:space:]]+mpm_" /etc/apache2/ || true
 
 # Set working directory
 WORKDIR /var/www/html
