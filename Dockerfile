@@ -67,5 +67,6 @@ ENV PORT=8080
 # Update Apache ports configuration to listen on PORT env var
 RUN sed -i 's/80/${PORT}/g' /etc/apache2/sites-available/000-default.conf /etc/apache2/ports.conf
 
-# Run Apache in foreground
-CMD ["apache2-foreground"]
+# Run Apache in foreground, dumping MPM state to logs first so we can
+# see what Apache actually sees at runtime (not build time)
+CMD ["sh", "-c", "echo '=== runtime mods-enabled ===' && ls -la /etc/apache2/mods-enabled/ && echo '=== runtime apache2ctl -M ===' && apache2ctl -M 2>&1 ; echo '=== starting apache ===' ; exec apache2-foreground"]
