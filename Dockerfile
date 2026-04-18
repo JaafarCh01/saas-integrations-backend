@@ -1,5 +1,7 @@
-# Use the official PHP image with Apache
-FROM php:8.2-apache-bookworm
+# Use the official PHP image with Apache (Debian 11 — ships mpm_prefork
+# by default, which is what mod_php needs. The bookworm variant defaults
+# to mpm_event and requires surgery to replace it.)
+FROM php:8.2-apache-bullseye
 
 # Install system dependencies (ADDED: libc-client-dev, libkrb5-dev for IMAP)
 RUN apt-get update && apt-get install -y \
@@ -24,19 +26,12 @@ RUN docker-php-ext-configure imap --with-kerberos --with-imap-ssl
 # Install PHP extensions (ADDED: imap)
 RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd zip imap
 
-# Enable Apache mod_rewrite and ensure only mpm_prefork is active
-# (mod_php requires mpm_prefork; bookworm leaves other MPMs wired up which
-# causes "More than one MPM loaded" on boot — scrub every mpm symlink AND
-# comment out any stray `LoadModule mpm_...` line hiding in conf files)
-RUN set -ex && \
-    rm -f /etc/apache2/mods-enabled/mpm_event.* \
-          /etc/apache2/mods-enabled/mpm_worker.* \
-          /etc/apache2/mods-available/mpm_event.* \
-          /etc/apache2/mods-available/mpm_worker.* && \
-    a2enmod mpm_prefork && \
-    a2enmod rewrite && \
-    echo "=== final mods-enabled ===" && \
-    ls -la /etc/apache2/mods-enabled/
+# Enable Apache mod_rewrite (mpm_prefork is the default on bullseye,
+# no extra surgery needed)
+RUN a2enmod rewrite
+
+# Sanity-check Apache config at build time — fail fast if broken
+RUN apache2ctl -t
 
 # Set working directory
 WORKDIR /var/www/html
